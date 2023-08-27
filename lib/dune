@@ -1,2 +1,4 @@
 (library
- (name agaml))
+ (name agaml)
+ (preprocess (pps ppx_deriving.show))
+)

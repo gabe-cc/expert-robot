@@ -10,6 +10,7 @@ type expr =
 | Field of expr * string
 | Case of string * expr * texpr (* Case expr : ty *)
 | Match of expr * (string * (string * expr)) list
+[@@deriving show { with_path = false }]
 
 and function_ = var * texpr * expr (* fun (x : ty) -> body *)
 
@@ -193,6 +194,12 @@ let rec check : tctx -> expr -> tvalue -> unit = fun tctx expr ty ->
     let tv = synthesize tctx exp in
     let tctx' = (var , tv) :: tctx in
     check tctx' body ty
+  )
+  | Literal (LInt n) , TLiteral (LInt n') -> (
+    assert (n = n')
+  )
+  | Literal (LString s) , TLiteral (LString s') -> (
+    assert (s = s')
   )
   | Call _ , _
   | Annotation _ , _
