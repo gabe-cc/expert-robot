@@ -7,10 +7,10 @@ dune runtest --watch
 # TODO
 X check
 X pp
-- test
+X test
   X eval
   X synthesize
-  - anti-tests
+  X anti-tests
 - rec
 - error message
 - misc

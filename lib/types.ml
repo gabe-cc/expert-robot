@@ -216,13 +216,18 @@ let rec check : tctx -> expr -> tvalue -> unit = fun tctx expr ty ->
     match matchee' with
     | TVariant cases -> (
       if branches = [] then failwith "when type checking pattern matching, was empty" ;
-      branches |> List.iter @@ fun (name , (var , body)) ->
-      match List.assoc_opt name cases with
-      | Some case -> (
-        let tctx' = (var , case) :: tctx in
-        check tctx' body ty
+      branches |> List.iter (fun (name , (var , body)) ->
+        match List.assoc_opt name cases with
+        | Some case -> (
+          let tctx' = (var , case) :: tctx in
+          check tctx' body ty
+        )
+        | None -> failwith @@ F.sprintf "when type checking pattern matching, branch (%s) that was not part of the variant" name
+      ) ;
+      cases |> List.iter (fun (name , _) ->
+        if List.assoc_opt name branches = None then
+          failwith @@ F.sprintf "missing branch (%s) in match case" name
       )
-      | None -> failwith @@ F.sprintf "when type checking pattern matching, branch (%s) that was not part of the variant" name
     )
     | _ -> failwith "when type checking pattern matching, got a non-variant as matchee"
   )
@@ -326,6 +331,12 @@ and synthesize : tctx -> expr -> tvalue = fun tctx expr ->
             check tctx' body ty
           )
           | None -> failwith @@ F.sprintf "when type checking pattern matching, branch (%s) that was not part of the variant" name
+        in
+        let () =
+          cases |> List.iter (fun (name , _) ->
+            if List.assoc_opt name branches = None then
+              failwith @@ F.sprintf "missing branch (%s) in match case" name
+          )
         in
         ty
       )
