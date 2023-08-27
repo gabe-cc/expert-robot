@@ -1,0 +1,4 @@
+(executable
+ (public_name agaml)
+ (name main)
+ (libraries agaml))
