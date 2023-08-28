@@ -30,7 +30,9 @@ X static eval
   X tests
 - polymorphism
   X collapse texpr and tvalues
-  - simple
+  X deep polymorphism
+  - remove useless cases in check
+  - parametric types
   - higher order
   - CoC
 - multi file

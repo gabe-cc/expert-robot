@@ -45,3 +45,6 @@ let ttuple lst = trecord @@ kv_of_lst lst
 let eval_full x = Eval (true , x)
 let eval_partial x = Eval (false , x)
 let tvar x = TVar x
+let funct var expr = FunctionT (var , expr)
+let callt expr texpr = CallT (expr , texpr)
+let tfunc var texpr = TFunction (var , texpr)

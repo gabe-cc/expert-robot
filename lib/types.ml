@@ -15,8 +15,8 @@ type expr =
 | Rec of string * expr (* rec self -> body *)
 | Closure of var * expr * ctx
 | Eval of bool * expr (* static_eval (full?) expr *)
-(* | FunctionT of var * expr (* T : Type -> body *)
-| CallT of expr * texpr (* expr ty *) *)
+| FunctionT of var * expr (* T : Type -> body *)
+| CallT of expr * texpr (* expr ty *)
 [@@deriving show { with_path = false }]
 
 and builtin =
@@ -39,7 +39,7 @@ and texpr =
 | TVariant of (string * texpr) list
 | TMu of string * texpr (* mu var -> body *)
 | TVar of string
-(*| TFunction of string * texpr (* TFUN var -> body *) *)
+| TFunction of string * texpr (* TFUN var -> body *)
 
 and var = string
 
@@ -58,7 +58,7 @@ and ctx_member = {
   var context used for type of regular variables
   type var context used for value of type variables
 *)
-and tctx = ctx * (string * texpr) list (* `texpr` should be tvalue *)
+and tctx = ctx * (string * texpr option) list (* `texpr` should be tvalue *)
 
 let ctx_append x value : ctx -> ctx =
   fun ctx -> (x , { value = Some value ; tvalue = None }) :: ctx
@@ -74,8 +74,10 @@ let tctx_lookup_var x : tctx -> texpr option =
   x.tvalue
 )
 let tctx_append_tvar x tval : tctx -> tctx =
-  fun (vars , tvars) -> vars , (x , tval) :: tvars
-let tctx_lookup_tvar x : tctx -> texpr option =
+  fun (vars , tvars) -> vars , (x , Some tval) :: tvars
+let tctx_append_tvar_hole x : tctx -> tctx =
+  fun (vars , tvars) -> vars , (x , None) :: tvars
+let tctx_lookup_tvar x : tctx -> texpr option option =
   fun (_vars , tvars) -> List.assoc_opt x tvars
 let tctx_closure (new_vars : ctx) : tctx -> tctx =
   fun (_old_vars , _tvars) -> new_vars , []
@@ -116,9 +118,24 @@ let (let+) x f =
 let full x = Full x
 let partial x = Partial x
 
+module Flag() = struct
+  let flag = ref false
+  let with_flag f =
+    flag := true ;
+    f () ;
+    flag := false
+  let counter = ref 0
+  let counter_inc () = counter := !counter + 1 ; !counter - 1
+end
 
+module Eval_log_steps = Flag()
+module Synthesize_log_steps = Flag()
 
+(* subject reduction should hold *)
 let rec eval : ctx -> expr -> eval_result = fun ctx expr ->
+  if !Eval_log_steps.flag then (
+    Format.printf "@[<v>Eval step:@;%a@]\n%!" pp_expr expr 
+  ) ;
   match expr with
   | Builtin x -> eval_builtin ctx x
   | Variable x -> (
@@ -201,6 +218,13 @@ let rec eval : ctx -> expr -> eval_result = fun ctx expr ->
   )
   | Closure _ -> full expr
   | Eval (_full , expr) -> eval ctx expr
+  | FunctionT (tvar , body) -> full @@ FunctionT (tvar , body)
+  | CallT (expr , texpr) -> (
+    match eval ctx expr with
+    | Full (FunctionT (_ , body)) -> eval ctx body
+    | Full _ -> failwith "callt on non functiont"
+    | Partial expr' -> partial @@ CallT (expr' , texpr)
+  )
 
 and eval_builtin : ctx -> builtin -> 'a = fun ctx b ->
   match b with
@@ -274,13 +298,13 @@ let rec subtype : tctx -> texpr -> texpr -> bool = fun tctx ty1 ty2 ->
   | TMu _ , _ | _ , TMu _ -> false
   | TVar x , TVar x' when x = x' -> true
   | TVar _ , _
-  (* | _ , TVar _ *)
+  | _ , TVar _
     -> failwith "should not try to subtype variables"
-  (* | TFunction (x1 , body1) , TFunction (x2 , body2) -> (
+  | TFunction (x1 , body1) , TFunction (x2 , body2) -> (
     (* no alpha equivalence for higher order types. pure syntactic equality. *)
     x1 = x2 &&
     syntactic_teeq body1 body2
-  ) *)
+  )
   (* | TFunction _ , _ | _ , TFunction _ -> false *)
   
 let rec teval : tctx -> texpr -> texpr = fun tctx texp ->
@@ -308,9 +332,19 @@ let rec teval : tctx -> texpr -> texpr = fun tctx texp ->
   | TMu (var , body) -> TMu (var , body)
   | TVar var -> (
     match tctx_lookup_tvar var tctx with
-    | Some tv -> tv
-    | None -> failwith "missing type variable"
+    | Some (Some tv) -> tv
+    | Some None -> TVar var
+    | None -> failwith @@ F.asprintf "missing type variable (%s)" var
   )
+  | TFunction (var , body) -> (
+    (*
+      Should reduce under the lambdas. But this implies termination of strong normalization for type level calculus. hmmmm
+      TODO: check if should reduce under the lambda or not
+    *)
+    let tctx' = tctx_append_tvar_hole var tctx in
+    let body' = teval tctx' body in
+    TFunction (var , body')
+  ) 
   (* | TEFunction (var , body) -> TFunction (var , body) *)
   (* | TECall (f , arg) -> (
     let f' = teval tctx f in
@@ -401,14 +435,15 @@ let rec check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
     let body' , () = check tctx' body ty in
     Rec (var , body') , ()
   )
+  (* | Builtin _ , _ *)
   | Call _ , _
   | Annotation _ , _
   | Literal _ , _
   | Record _ , _
   | Field _ , _
   | Unfold _ , _
-  (* | FunctionT _ , _
-  | CallT _ , _ *)
+  | FunctionT _ , _
+  | CallT _ , _
   -> (
     let expr' , inferred_ty = synthesize tctx expr in
     if not (subtype tctx inferred_ty ty) then (
@@ -480,6 +515,15 @@ and check_builtin : tctx -> builtin -> texpr -> expr * unit = fun tctx b ty ->
 
 (* should synthesize a tvalue *)
 and synthesize : tctx -> expr -> expr * texpr = fun tctx expr ->
+  let counter = Synthesize_log_steps.counter_inc () in
+  if !Synthesize_log_steps.flag then (
+    Format.printf "@[<v>Synthesize step start (%d):@;%a@]\n%!" counter pp_expr expr 
+  ) ;
+  (fun (_expr , texpr) -> (
+    if !Synthesize_log_steps.flag then
+      Format.printf "@[<v>Synthesize step stop (%d):@;%a@]\n%!" counter pp_texpr texpr ;
+    _expr , texpr
+  )) @@
   match expr with
   | Builtin x -> synthesize_builtin tctx x
   | Variable var -> (
@@ -605,7 +649,22 @@ and synthesize : tctx -> expr -> expr * texpr = fun tctx expr ->
     )
     | Partial _expr -> failwith "can only partially evaluate full-eval annotated expression"
   )
-  (* | FunctionT (var , body) ->  *)
+  | FunctionT (var , body) -> (
+    let tctx' = tctx_append_tvar_hole var tctx in
+    let body' , body_ty = synthesize tctx' body in
+    FunctionT (var , body') , TFunction (var , body_ty)
+  )
+  | CallT (f , arg) -> (
+    let f' , f_ty = synthesize tctx f in
+    let arg' = teval tctx arg in
+    match f_ty with
+    | TFunction (var , body) -> (
+      let tctx' = tctx_append_tvar var arg' tctx in
+      let body' = teval tctx' body in
+      CallT (f' , arg) , body'
+    )
+    | _ -> failwith "callt on non-tfunction type"
+  )
 
 and synthesize_builtin : tctx -> builtin -> expr * texpr = fun tctx b ->
   match b with

@@ -421,6 +421,53 @@ let test_synthesize () =
     eval_full @@
     !%"x" +% (!+%7 +% !+%43)
   ) ;
+  (
+    let id = 
+      funct "A" @@ func "x" (tvar "A") @@
+      !%"x"
+    in
+    let id_ty =
+      tfunc "A" @@ tarrow (tvar "A") (tvar "A")
+    in
+    test "polymorphic id" id id_ty ;
+    test "polymorphism app" (
+      let_in "id" id @@
+      tuple [
+        (callt !%"id" tint) @% !+%42 ;
+        (callt !%"id" tstring) @% !^%"lol" ; 
+      ]
+    ) (ttuple [
+      tint ;
+      tstring ;
+    ]) ;
+    test_fail "polymorphism mis-application" (
+      let_in "id" id @@
+      (callt !%"id" tint) @% !^%"lol" ;
+    ) ;
+    test_fail "polymorphism no callt" (
+      let_in "id" id @@
+      !%"id" @% !+%42 ;
+    ) ;
+    test "polymorphic id apps" (
+      tuple [ callt id tint ; callt id tstring ]
+    ) @@ ttuple [ tarrow tint tint ; tarrow tstring tstring ] ;
+    test "id . id" (
+      let_in "id" id @@
+      (callt !%"id" id_ty) @% !%"id"
+    ) id_ty ;
+  ) ;
+  (* AT.Synthesize_log_steps.with_flag @@ fun () -> *)
+  (
+    let pair =
+      funct "A" @@ funct "B" @@
+      func "x" (tvar "A") @@ func "y" (tvar "B") @@
+      tuple [!%"x" ; !%"y"]
+    in
+    test "polymorphism double" (
+      let_in "pair" pair @@
+      (callt (callt !%"pair" tint) tstring)
+    ) (tarrow tint @@ tarrow tstring @@ ttuple [tint ; tstring]) ;
+  ) ;
   ()
 
 let () =
