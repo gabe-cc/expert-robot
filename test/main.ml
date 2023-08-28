@@ -19,8 +19,14 @@ let test_basic name f =
 let test_eval () =
   let open AU in
   let test name x y =
+    let exception Fail_eval in
     test_basic (O.asprintf "@{<it>eval@} ; %s" name) @@ fun () ->
-    assert (toplevel_eval x = y)
+    let x' = toplevel_eval x in
+    if (x' <> y) then (
+      O.eprintf "@[<v>Different values.@;[@{<green>%a@}]@;vs@;[@{<red>%a@}]@;@]"
+      AT.pp_value x' AT.pp_value y ;
+      raise Fail_eval
+    )
   in
   let test_fail name x =
     let exception No_fail in
@@ -98,6 +104,43 @@ let test_eval () =
       "bar" , ("y" , !%"y" +% !+%1) ;
       "foo" , ("x" , !%"x" +% !%"x" +% !%"x") ;
     ]  
+  ) ;
+  (
+    let tnat =
+      tmu "self" @@ 
+      tevariant [
+        "zero" , teunit ;
+        "succ" , tevar "self" ;
+      ]
+    in
+    test "pred function" (
+      let_in "zero" (fold (c'"zero" unit) !?%tnat) @@
+      let_in "succ" (func "x" !?%tnat @@ fold (c'"succ" !%"x") !?%tnat) @@
+      let_in "pred" (
+        func "x" !?%tnat @@
+        match_ (unfold !%"x") [
+          "zero" , ("_" , !%"zero") ;
+          "succ" , ("pred" , !%"pred") ;
+        ]
+      ) @@
+      let_in "to_int" (
+        func "x" !?%tnat @@
+        match_ (unfold !%"x") [
+          "zero" , ("_" , !+%0) ;
+          "succ" , ("_" , !+%1) ;
+        ]      
+      ) @@
+      record [
+        "0" , !%"to_int" @% !%"zero" ;
+        "1" , !%"to_int" @% !%"succ" @% !%"zero" ;
+        "2" , !%"to_int" @% !%"pred" @% !%"succ" @% !%"zero" ;
+      ]
+    ) (vrecord [
+      "0" , vint 0 ;
+      "1" , vint 1 ;
+      "2" , vint 0 ; 
+    ]) ;
+  
   ) ;
   ()
 

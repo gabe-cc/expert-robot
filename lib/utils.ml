@@ -46,3 +46,5 @@ let te = Debug.texpr_of_tvalue
 let (!?%) = te
 let fold e t = annot (Fold e) t
 let unfold e = Unfold e
+let vfold e = VFold e
+let vunit = vrecord []

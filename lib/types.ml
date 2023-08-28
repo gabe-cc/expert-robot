@@ -53,8 +53,6 @@ and texpr =
 | TEMu of string * texpr (* mu var -> body *)
 | TEVar of string
 
-
-
 and var = string
 
 and statement =

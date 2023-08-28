@@ -12,12 +12,12 @@ X test
   X synthesize
   X anti-tests
 X remove forced annotation on constructor
-- rec types with fold/unfold
+X rec types with fold/unfold
   X eval
   X type checking
-  - tests
+  X tests
     X types
-    - eval
+    X eval
 - rec values with rec keyword
 - error message
 - misc
@@ -31,11 +31,14 @@ X remove forced annotation on constructor
   - simple
   - higher order
   - CoC
+- multi file
 - partial eval
   - partial evaluator
   - literal -> expr
   - inline flag
-- location
+- closure for mu types (mu within mu)
+- mutually recursive mu types
 - CLI
 - grammar
+- location
 - patterns
