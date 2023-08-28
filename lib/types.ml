@@ -8,8 +8,9 @@ type expr =
 | Literal of literal
 | Record of (string * expr) list
 | Field of expr * string
-| Case of string * expr * texpr (* Case expr : ty *)
+| Case of string * expr
 | Match of expr * (string * (string * expr)) list
+(* | Fold of expr * texpr *)
 [@@deriving show { with_path = false }]
 
 and function_ = var * texpr * expr (* fun (x : ty) -> body *)
@@ -40,6 +41,7 @@ and tvalue =
 | TBuiltin of tbuiltin
 | TRecord of (string * tvalue) list
 | TVariant of (string * tvalue) list
+(* | Mu of tvalue *)
 
 and var = string
 
@@ -102,7 +104,7 @@ let rec eval : ctx -> expr -> value = fun ctx expr ->
     )
     | _ -> failwith "when evaluating field, got a non record"
   )
-  | Case (name , expr , _texpr) -> (
+  | Case (name , expr) -> (
     let value = eval ctx expr in
     VCase (name , value)
   )
@@ -201,12 +203,22 @@ let rec check : tctx -> expr -> tvalue -> unit = fun tctx expr ty ->
   | Literal (LString s) , TLiteral (LString s') -> (
     assert (s = s')
   )
+  | Case (name , content) , _ -> (
+    match ty with
+    | TVariant lst -> (
+      match List.assoc_opt name lst with
+      | Some ty -> (
+        check tctx content ty
+      )
+      | None -> failwith @@ F.sprintf "when type checking case, case (%s) did not match variant type" name
+    )
+    | _ -> failwith "when type checking case, got a non-variant type annotation"  
+  )
   | Call _ , _
   | Annotation _ , _
   | Literal _ , _
   | Record _ , _
   | Field _ , _
-  | Case _ , _
   -> (
     let inferred_ty = synthesize tctx expr in
     assert (subtype tctx inferred_ty ty)
@@ -295,18 +307,7 @@ and synthesize : tctx -> expr -> tvalue = fun tctx expr ->
     )
     | _ -> failwith "when type checking field, didn't get a record"
   )
-  | Case (name , content , texpr) -> (
-    match texpr with
-    | TVariant lst -> (
-      match List.assoc_opt name lst with
-      | Some ty -> (
-        check tctx content ty ;
-        texpr
-      )
-      | None -> failwith @@ F.sprintf "when type checking case, case (%s) did not match variant type" name
-    )
-    | _ -> failwith "when type checking case, got a non-variant type annotation"
-  )
+  | Case _ -> failwith "can not synthesize case, need a type annotation"
   | Match (matchee , branches) -> (
     let matchee' = synthesize tctx matchee in
     match matchee' with
