@@ -24,12 +24,10 @@ X rec values with rec keyword
   X tests
     X eval
     X types
-- partial eval
-  - reconstruct term when synthesizing
-  - static eval (full or partial) construct
-  - inline
-  - partial evaluator
-  - tests
+X static eval
+  X static eval (full or partial) construct
+  X reconstruct term when synthesizing
+  X tests
 - polymorphism
   - collapse texpr and tvalues
   - simple
@@ -44,6 +42,9 @@ X rec values with rec keyword
   - add subtyping between records
   - minimal size closures
   - test shadowing (in match among other things)
+  - let inline
+  - partial evaluate function args
+  - go through TODOs
 - error message
 - closure for mu types (mu within mu)
 - mutually recursive mu types

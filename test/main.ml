@@ -203,10 +203,25 @@ let test_synthesize () =
   let test name x y =
     let exception Fail_synthesis in
     test_basic (O.asprintf "@{<it>synthesize@} ; %s" name) @@ fun () ->
-    let synth = toplevel_synthesize x in
+    let _ , synth = toplevel_synthesize x in
     if (synth <> y) then (
       O.eprintf "@[<v>Different types.@;[@{<green>%a@}]@;vs@;[@{<red>%a@}]@;@]"
       AT.pp_texpr !?%synth AT.pp_texpr !?%y ;
+      raise Fail_synthesis
+    )
+  in
+  let test_full name x y z =
+    let exception Fail_synthesis in
+    test_basic (O.asprintf "@{<it>synthesize-full@} ; %s" name) @@ fun () ->
+    let x' , synth = toplevel_synthesize x in
+    if (x' <> y) then (
+      O.eprintf "@[<v>Different exprs.@;What I got: [@{<green>%a@}]@;vs@;What I expected: [@{<red>%a@}]@;@]"
+      AT.pp_expr x' AT.pp_expr y ;
+      raise Fail_synthesis    
+    ) ;
+    if (synth <> z) then (
+      O.eprintf "@[<v>Different types.@;[@{<green>%a@}]@;vs@;[@{<red>%a@}]@;@]"
+      AT.pp_texpr !?%synth AT.pp_texpr !?%z ;
       raise Fail_synthesis
     )
   in
@@ -393,6 +408,19 @@ let test_synthesize () =
   test "recursive values inhabit all types: string" (
     rec_ "self" !?%tstring !%"self"
   ) tstring ;
+  test_full "static eval full literal" (
+    annot (eval_full @@ !+%13 +% !+%29) !?%(tlint 42)
+  ) (annot (!+%42) !?%(tlint 42)) (tlint 42) ;
+  test_full "static eval partial fun body" (
+    func "x" !?%tint @@
+    eval_partial @@
+    !%"x" +% (!+%7 +% !+%43)
+  ) (func "x" !?%tint @@ !%"x" +% !+%50) (tarrow tint tint) ;
+  test_fail "static eval full fun body" (
+    func "x" !?%tint @@
+    eval_full @@
+    !%"x" +% (!+%7 +% !+%43)
+  ) ;
   ()
 
 let () =

@@ -48,3 +48,5 @@ let kv_of_lst lst =
   List.mapi (fun i x -> string_of_int i , x) lst
 let tuple lst = record @@ kv_of_lst lst
 let ttuple lst = trecord @@ kv_of_lst lst
+let eval_full x = Eval (true , x)
+let eval_partial x = Eval (false , x)

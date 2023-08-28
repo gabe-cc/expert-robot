@@ -94,6 +94,22 @@ let tctx_to_ctx : tctx -> ctx = fst
 
 module F = Format
 
+(*
+  Only reason for something to be partial is if reducing if a variable is missing its value.
+  
+  Examples:
+  - Typechecking and not inlining
+  - Reducing under a lambda
+
+  When something is not fully evaluated, it is hard to know if it is valid or not yet. For instance:
+  - `x + 4` is valid, but you need to see that `x` is a variable.
+  - `((fun y -> ...) x) + 4` is valid too, but you need to see that `x` is partial.
+  - `{foo = (* .. some partial expression *)} + 4` is not valid, but you need to check that it is a record (even though it is partial) to see that there is no way to recover.
+
+  For now, we are being overly approximative, and do not fail in the case one of the members is partial. As such `{ foo = (* partial *) }` can be added to, or applied to.
+
+  TODO: Exclude impossible cases, like `{foo = (* partial *)} + 4`
+*)
 type eval_result =
 | Full of expr (* should be a value *)
 | Partial of expr (* for strong norm purposes *)
@@ -200,13 +216,24 @@ let rec eval : ctx -> expr -> eval_result = fun ctx expr ->
 and eval_builtin : ctx -> builtin -> 'a = fun ctx b ->
   match b with
   | BAdd (e1 , e2) -> (
-    let+ value1 = eval ctx e1 in
-    let+ value2 = eval ctx e2 in
-    match value1 , value2 with
-    | Literal (LInt x) , Literal (LInt y) -> full @@ Literal (LInt (x + y))
-    | _ , Literal (LInt _) -> failwith "when evaluating add, left arg was not an int"
-    | Literal (LInt _) , _ -> failwith "when evaluating add, right arg was not an int"
-    | _ , _ -> failwith "when evaluating add, no arg was an int"
+    (* TODO: Clean this up lol. *)
+    match eval ctx e1 , eval ctx e2 with
+    | Full (Literal (LInt x)) , Full (Literal (LInt y))
+      -> full @@ Literal (LInt (x + y))
+    | Partial (_ as x) , Full (Literal (LInt _) as y)
+    | Full (Literal (LInt _) as x) , Partial (_ as y)
+    | Partial (_ as x) , Partial (_ as y)
+      -> Partial (Builtin (BAdd (x , y)))
+    | Partial (Literal (LInt _)) , _
+    | _ , Partial (Literal (LInt _))
+      -> failwith "dev: should not have partially evaluated literal"
+    | Full _ , Full (Literal (LInt _))
+    | Full _ , Partial _
+      -> failwith "when evaluating add, left arg was not an int"
+    | Full (Literal (LInt _)) , Full _
+    | Partial _ , Full _
+      -> failwith "when evaluating add, right arg was not an int"
+    | Full _ , Full _ -> failwith "when evaluating add, no arg was an int"
   )
 
 
@@ -303,12 +330,14 @@ let rec teval : tctx -> texpr -> tvalue = fun tctx texp ->
   ) *)
 
 
-let rec check : tctx -> expr -> tvalue -> unit = fun tctx expr ty ->
+let rec check : tctx -> expr -> tvalue -> expr * unit = fun tctx expr ty ->
   match expr , ty with
   | Builtin x , _ -> check_builtin tctx x ty
   | Variable var , _ -> (
     match tctx_lookup_var var tctx with
-    | Some var_ty -> assert (subtype tctx var_ty ty)
+    | Some var_ty -> (
+      Variable var , assert (subtype tctx var_ty ty)
+    )
     | None -> failwith @@ F.sprintf "when type checking, variable not found (%s)" var
   )
   | Function (var , texp , body) , TArrow (input , output) -> (
@@ -316,60 +345,67 @@ let rec check : tctx -> expr -> tvalue -> unit = fun tctx expr ty ->
     assert (subtype tctx var_ty input) ;
     let tv = teval tctx texp in
     let tctx' = tctx_append_var var tv tctx in
-    check tctx' body output
+    let body' , () = check tctx' body output in
+    Function (var , texp , body') , () (* TODO: texp -> tv *)
   )
   | Function _ , _ -> failwith "function expects tarrow"
   | LetIn (var , exp , body) , _ -> (
-    let tv = synthesize tctx exp in
+    let exp' , tv = synthesize tctx exp in
     let tctx' = tctx_append_var var tv tctx in
-    check tctx' body ty
+    let body' , () = check tctx' body ty in
+    LetIn (var , exp' , body') , ()
   )
   | Literal (LInt n) , TLiteral (LInt n') -> (
-    assert (n = n')
+    Literal (LInt n) , assert (n = n')
   )
   | Literal (LString s) , TLiteral (LString s') -> (
-    assert (s = s')
+    Literal (LString s) , assert (s = s')
   )
   | Case (name , content) , _ -> (
     match ty with
     | TVariant lst -> (
       match List.assoc_opt name lst with
       | Some ty -> (
-        check tctx content ty
+        let content' , () = check tctx content ty in
+        Case (name , content') , ()
       )
       | None -> failwith @@ F.sprintf "when type checking case, case (%s) did not match variant type" name
     )
     | _ -> failwith "when type checking case, got a non-variant type annotation"  
   )
   | Match (matchee , branches) , _ -> (
-    let matchee' = synthesize tctx matchee in
-    match matchee' with
+    let matchee' , matchee_ty = synthesize tctx matchee in
+    match matchee_ty with
     | TVariant cases -> (
       if branches = [] then failwith "when type checking pattern matching, was empty" ;
-      branches |> List.iter (fun (name , (var , body)) ->
+      let branches' = branches |> List.map (fun (name , (var , body)) ->
         match List.assoc_opt name cases with
         | Some case -> (
           let tctx' = tctx_append_var var case tctx in
-          check tctx' body ty
+          let body' , () = check tctx' body ty in
+          name , (var , body')
         )
         | None -> failwith @@ F.sprintf "when type checking pattern matching, branch (%s) that was not part of the variant" name
-      ) ;
+      ) in
       cases |> List.iter (fun (name , _) ->
         if List.assoc_opt name branches = None then
           failwith @@ F.sprintf "missing branch (%s) in match case" name
-      )
+      ) ;
+      Match (matchee' , branches') , ()
     )
     | _ -> failwith "when type checking pattern matching, got a non-variant as matchee"
   )
   | Fold expr , TMu (var , body) -> (
     let tctx' = tctx_append_tvar var ty tctx in
-    let body' = teval tctx' body in
-    check tctx' expr body'
+    let body_ty = teval tctx' body in
+    let expr' , () = check tctx' expr body_ty in
+    Fold expr' , ()
   )
   | Fold _ , _ -> failwith "folding a non-mu type"
   | Rec (var , body) , _ -> (
     let tctx' = tctx_append_var var ty tctx in
-    check tctx' body ty
+    let body' , () = check tctx' body ty in
+    Rec (var , body') , ()
   )
   | Call _ , _
   | Annotation _ , _
@@ -377,12 +413,15 @@ let rec check : tctx -> expr -> tvalue -> unit = fun tctx expr ty ->
   | Record _ , _
   | Field _ , _
   | Unfold _ , _
-  | Eval _ , _
   (* | FunctionT _ , _
   | CallT _ , _ *)
   -> (
-    let inferred_ty = synthesize tctx expr in
-    assert (subtype tctx inferred_ty ty)
+    let expr' , inferred_ty = synthesize tctx expr in
+    if not (subtype tctx inferred_ty ty) then (
+      failwith @@ Format.asprintf "@[<v>When checking expression:@;%a@;Inferred type was:@;%a@;But expected type was:@;%a@;@]"
+        pp_expr expr pp_tvalue inferred_ty pp_tvalue ty
+    ) ;
+    expr' , ()
   )
   | Closure (var , body , ctx) , TArrow (input , output) -> (
     let ctx' =
@@ -397,7 +436,8 @@ let rec check : tctx -> expr -> tvalue -> unit = fun tctx expr ty ->
           | Some ty -> ty
           | None -> (
             let tctx' = tctx_closure acc tctx in
-            synthesize tctx' expr
+            let _ , ty = synthesize tctx' expr in
+            ty
           )
         in
         ctx_append_full var expr ty acc
@@ -408,52 +448,80 @@ let rec check : tctx -> expr -> tvalue -> unit = fun tctx expr ty ->
     check tctx'' body output
   )
   | Closure _ , _ -> failwith "closure need a function type"
+  | Eval (full , expr) , _ -> (
+    (*
+      With static evaluation, do you typecheck _before_ and _after_ the static evaluation? Or only after?
+      - If you check only after, you get a more specific type, that could make the typechecking succeed.
+        - (1 + 1 : literal 2) should not typecheck
+        - (eval (1+1) : literal 2) should typecheck
+      - But you might also silence error.
+        - should `(if true then 42 else "lol" : int)` typecheck?
+      Right now, we only check after.
+      TODO: Make this better. Check against a "reasonable over-approximation" of `ty` before.
+     *)
+    (* let expr' , () = check tctx expr ty in
+    match eval (tctx_to_ctx tctx) expr' with *)
+    match eval (tctx_to_ctx tctx) expr with
+    | Full value -> (
+      let value' , () = check tctx value ty in
+      (* assert (value = value') *)
+      value' , ()
+    )
+    | Partial expr when not full -> (
+      let expr' , () = check tctx expr ty in
+      expr' , ()
+    )
+    | Partial _expr -> failwith "can only partially evaluate full-eval annotated expression"
+  )
 
-and check_builtin : tctx -> builtin -> tvalue -> unit = fun tctx b ty ->
+
+and check_builtin : tctx -> builtin -> tvalue -> expr * unit = fun tctx b ty ->
   match b , ty with
   | BAdd (e1 , e2) , TBuiltin TInt -> (
-    check tctx e1 (TBuiltin TInt) ;
-    check tctx e2 (TBuiltin TInt)
+    let e1' , () = check tctx e1 (TBuiltin TInt) in
+    let e2' , () = check tctx e2 (TBuiltin TInt) in
+    Builtin (BAdd (e1' , e2')) , ()
   )
   | BAdd _ , _ -> failwith "got bad type on add"
 
-and synthesize : tctx -> expr -> tvalue = fun tctx expr ->
+and synthesize : tctx -> expr -> expr * tvalue = fun tctx expr ->
   match expr with
   | Builtin x -> synthesize_builtin tctx x
   | Variable var -> (
     match tctx_lookup_var var tctx with
-    | Some tv -> tv
+    | Some tv -> expr , tv
     | None -> failwith @@ F.sprintf "when type checking, variable not found (%s)" var
   )
   | Function (var , texp , body) -> (
     let tv = teval tctx texp in
     let tctx' = tctx_append_var var tv tctx in
-    let body' = synthesize tctx' body in
-    TArrow (tv , body')
+    let body' , body_ty = synthesize tctx' body in
+    Function (var , texp , body') , TArrow (tv , body_ty) (* TODO: texp -> tv *)
   )
   | LetIn (var , exp , body) -> (
-    let tv = synthesize tctx exp in
+    let exp' , tv = synthesize tctx exp in
     let tctx' = tctx_append_var var tv tctx in
-    synthesize tctx' body
+    let body' , body_ty = synthesize tctx' body in
+    LetIn (var , exp' , body') , body_ty
   )
   | Call (f , arg) -> (
-    let f' = synthesize tctx f in
-    match f' with
+    let f' , f_ty = synthesize tctx f in
+    match f_ty with
     | TArrow (input , output) -> (
-      check tctx arg input ;
-      output
+      let arg' , () = check tctx arg input in
+      Call (f' , arg') , output
     )
     | _ -> failwith @@ F.sprintf "when type checking application, left part did not have function type"
   )
   | Annotation (expr , ty) -> (
     let ty' = teval tctx ty in
-    check tctx expr ty' ;
-    ty'
+    let expr' , () = check tctx expr ty' in
+    Annotation (expr' , ty) , ty'
   )
   | Literal lit -> (
     match lit with
-    | LInt _ -> TBuiltin (TInt)
-    | LString _ -> TBuiltin (TString)
+    | LInt _ -> Literal lit , TBuiltin (TInt)
+    | LString _ -> Literal lit , TBuiltin (TString)
   )
   | Record lst -> (
     let lst' =
@@ -461,41 +529,45 @@ and synthesize : tctx -> expr -> tvalue = fun tctx expr ->
         (fun (name , content) -> name , synthesize tctx content)
         lst
     in
-    TRecord lst'
+    let lst_expr = List.map (fun (name , (expr , _ty)) -> name , expr) lst' in
+    let lst_ty = List.map (fun (name , (_expr , ty)) -> name , ty) lst' in
+    Record lst_expr , TRecord lst_ty
   )
   | Field (record , name) -> (
-    let record' = synthesize tctx record in
-    match record' with
+    let record' , record_ty = synthesize tctx record in
+    match record_ty with
     | TRecord lst -> (
       match List.assoc_opt name lst with
-      | Some ty -> ty
+      | Some ty -> Field (record' , name) , ty
       | None -> failwith @@ F.sprintf "when type checking field, field (%s) was missing" name
     )
     | _ -> failwith "when type checking field, didn't get a record"
   )
   | Case _ -> failwith "can not synthesize case, need a type annotation"
   | Match (matchee , branches) -> (
-    let matchee' = synthesize tctx matchee in
-    match matchee' with
+    let matchee' , matchee_ty = synthesize tctx matchee in
+    match matchee_ty with
     | TVariant cases -> (
       match branches with
       | [] -> failwith "when type checking pattern matching, was empty"
       | hd_branch :: tl_branches -> (
-        let ty =
+        let hd_branch' , hd_branch_ty =
           let (name , (var , body)) = hd_branch in
           match List.assoc_opt name cases with
           | Some case -> (
             let tctx' = tctx_append_var var case tctx in
-            synthesize tctx' body
+            let body' , body_ty = synthesize tctx' body in
+            (name , (var , body')) , body_ty
           )
           | None -> failwith @@ F.sprintf "when type checking pattern matching, branch (%s) that was not part of the variant" name
         in
-        let () =
-          tl_branches |> List.iter @@ fun (name , (var , body)) ->
+        let tl_branches' =
+          tl_branches |> List.map @@ fun (name , (var , body)) ->
           match List.assoc_opt name cases with
           | Some case -> (
             let tctx' = tctx_append_var var case tctx in
-            check tctx' body ty
+            let body' , () = check tctx' body hd_branch_ty in
+            (name , (var , body'))
           )
           | None -> failwith @@ F.sprintf "when type checking pattern matching, branch (%s) that was not part of the variant" name
         in
@@ -505,38 +577,47 @@ and synthesize : tctx -> expr -> tvalue = fun tctx expr ->
               failwith @@ F.sprintf "missing branch (%s) in match case" name
           )
         in
-        ty
+        let branches' = hd_branch' :: tl_branches' in
+        Match (matchee' , branches') , hd_branch_ty
       )
     )
     | _ -> failwith "when type checking pattern matching, got a non-variant as matchee"
   )
   | Fold _ -> failwith "can not synthesize fold, need a type annotation"
   | Unfold body -> (
-    let ty = synthesize tctx body in
-    match ty with
-    | TMu (var , body) -> (
-      let tctx' = tctx_append_tvar var ty tctx in
-      let body' = teval tctx' body in
-      body'
+    let body' , body_ty = synthesize tctx body in
+    match body_ty with
+    | TMu (var , tbody) -> (
+      let tctx' = tctx_append_tvar var body_ty tctx in
+      let tbody' = teval tctx' tbody in
+      Unfold body' , tbody'
     )
     | _ -> failwith "unfolding a non-mu type"
   )
   | Rec (_ , _) -> failwith "can not synthesize rec, need a type annotation"
   | Closure _ -> failwith "can not synthesize closure, need a type annotation"
   | Eval (full , expr) -> (
-    match eval (tctx_to_ctx tctx) expr with
-    | Full value -> synthesize tctx value
-    | Partial expr when not full-> synthesize tctx expr
+    let expr' , ty = synthesize tctx expr in
+    match eval (tctx_to_ctx tctx) expr' with
+    | Full value -> (
+      let value' , () = check tctx value ty in
+      (* assert (value = value') *)
+      value' , ty
+    )
+    | Partial expr when not full -> (
+      let expr' , () = check tctx expr ty in
+      expr' , ty
+    )
     | Partial _expr -> failwith "can only partially evaluate full-eval annotated expression"
   )
   (* | FunctionT (var , body) ->  *)
 
-and synthesize_builtin : tctx -> builtin -> tvalue = fun tctx b ->
+and synthesize_builtin : tctx -> builtin -> expr * tvalue = fun tctx b ->
   match b with
   | BAdd (e1 , e2) -> (
-    check tctx e1 (TBuiltin TInt) ;
-    check tctx e2 (TBuiltin TInt) ;
-    TBuiltin TInt
+    let e1' , () = check tctx e1 (TBuiltin TInt) in
+    let e2' , () = check tctx e2 (TBuiltin TInt) in
+    Builtin (BAdd (e1' , e2')) , TBuiltin TInt
   )
 
 module Debug = struct
