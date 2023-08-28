@@ -211,6 +211,64 @@ let test_synthesize () =
       ]
     ) ;
   ) ;
+  (
+    let tnat =
+      tmu "self" @@ 
+      tevariant [
+        "zero" , teunit ;
+        "succ" , tevar "self" ;
+      ]
+    in
+    test "recursive nat 0" (
+      fold (c'"zero" unit) !?%tnat
+    ) tnat ;
+    test "recursive nat 1" (
+      let_in "x" (fold (c'"zero" unit) !?%tnat) @@
+      fold (c'"succ" !%"x") !?%tnat
+    ) tnat ;
+    test "recursive constructor wrappers" (
+      let_in "zero" (fold (c'"zero" unit) !?%tnat) @@
+      let_in "succ" (func "pred" !?%tnat @@
+        fold (c'"succ" !%"pred") !?%tnat
+      ) @@
+      !%"succ" @% !%"succ" @% !%"zero"
+    ) tnat ;
+    test_fail "recursive constructor wrappers, mutant 0" (
+      let_in "zero" (fold (c'"zero" unit) !?%tnat) @@
+      let_in "succ" (func "pred" !?%tnat @@
+       (c'"succ" !%"pred")
+      ) @@
+      !%"succ" @% !%"succ" @% !%"zero"
+    ) ;
+    test_fail "recursive constructor wrappers, mutant 1" (
+      let_in "zero" (fold (c'"zero" unit) !?%tnat) @@
+      let_in "succ" (func "pred" !?%tnat @@
+        fold (c'"succ" !%"pred") !?%tnat
+      ) @@
+      !%"succ" @% !%"suc" @% !%"zero"
+    ) ;
+    test "recursive nat matching" (
+      let_in "zero" (fold (c'"zero" unit) !?%tnat) @@
+      match_ (unfold !%"zero") [
+        "zero" , ("_" , !^%"foo") ;
+        "succ" , ("_" , !^%"bar") ;
+      ]
+    ) tstring ;
+    test "pred function" (
+      func "x" !?%tnat @@
+      match_ (unfold !%"x") [
+        "zero" , ("_" , (fold (c'"zero" unit) !?%tnat)) ;
+        "succ" , ("pred" , !%"pred") ;
+      ]
+    ) (tarrow tnat tnat) ;
+    test_fail "pred function, mutant 0" (
+      func "x" !?%tnat @@
+      match_ (unfold !%"x") [
+        "zero" , ("_" , (fold (c'"zero" unit) !?%tnat)) ;
+        "succ" , ("pred" , !+%42) ;
+      ]
+    ) ;
+  ) ;
   ()
 
 

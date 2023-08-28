@@ -13,6 +13,11 @@ X test
   X anti-tests
 X remove forced annotation on constructor
 - rec types with fold/unfold
+  X eval
+  X type checking
+  - tests
+    X types
+    - eval
 - rec values with rec keyword
 - error message
 - misc
