@@ -113,9 +113,11 @@ let test_eval () =
         "succ" , tevar "self" ;
       ]
     in
+    let zero = fold (c'"zero" unit) !?%tnat in
+    let succ = func "x" !?%tnat @@ fold (c'"succ" !%"x") !?%tnat in
     test "pred function" (
-      let_in "zero" (fold (c'"zero" unit) !?%tnat) @@
-      let_in "succ" (func "x" !?%tnat @@ fold (c'"succ" !%"x") !?%tnat) @@
+      let_in "zero" zero @@
+      let_in "succ" succ @@
       let_in "pred" (
         func "x" !?%tnat @@
         match_ (unfold !%"x") [
@@ -140,7 +142,51 @@ let test_eval () =
       "1" , vint 1 ;
       "2" , vint 0 ; 
     ]) ;
-  
+    let to_int =
+      rec_ "self" !?%(tarrow tnat tint) @@
+      func "x" !?%tnat @@
+      match_ (unfold !%"x") [
+        "zero" , ("_" , !+%0) ;
+        "succ" , ("pred" , !+%1 +% (!%"self" @% !%"pred")) ;
+      ] 
+    in
+    test "peano to_int function"  (
+      let_in "zero" zero @@
+      let_in "succ" succ @@
+      let_in "to_int" to_int @@
+      record [
+        "0" , !%"to_int" @% !%"zero" ;
+        "1" , !%"to_int" @% !%"succ" @% !%"zero" ;
+        "2" , !%"to_int" @% !%"succ" @% !%"succ" @% !%"zero" ;
+        "3" , !%"to_int" @% !%"succ" @% !%"succ" @% !%"succ" @% !%"zero" ;
+      ]
+    ) (vtuple @@ List.map vint [0;1;2;3]) ;
+    test "peano add" (
+      let_in "zero" zero @@
+      let_in "succ" succ @@
+      let_in "to_int" to_int @@
+      let_in "add" (
+        rec_ "add" !?% (tarrow tnat (tarrow tnat tnat)) @@
+        func "x" !?%tnat @@ func "y" !?%tnat @@
+        match_ (unfold !%"y") [
+          "zero" , ("_" , !%"x") ;
+          "succ" , ("pred_y" , !%"add" <|% (!%"succ" @% !%"x") <|% !%"pred_y") ;
+        ]
+      ) @@
+      tuple @@ List.map (fun x -> !%"to_int" @% x) @@ [
+        !%"add" <|% !%"zero" <|% !%"zero" ;
+        !%"add" <|% !%"succ" @% !%"zero" <|% !%"zero" ;
+        !%"add" <|% !%"succ" @% !%"zero" <|% !%"succ" @% !%"zero" ;
+        !%"add" <|% !%"zero" <|% !%"succ" @% !%"zero";
+        !%"add" <|% !%"succ" @% !%"zero" <|% !%"succ" @% !%"succ" @% !%"zero" ;
+      ] ;
+    ) @@ vtuple @@ List.map vint [
+      0 ;
+      1 ;
+      2 ;
+      1 ;
+      3 ;
+    ] ;
   ) ;
   ()
 
@@ -311,10 +357,35 @@ let test_synthesize () =
         "succ" , ("pred" , !+%42) ;
       ]
     ) ;
+    let to_int =
+      rec_ "self" !?%(tarrow tnat tint) @@
+      func "x" !?%tnat @@
+      match_ (unfold !%"x") [
+        "zero" , ("_" , !+%0) ;
+        "succ" , ("pred" , !+%1 +% (!%"self" @% !%"pred")) ;
+      ] 
+    in
+    test "type peano to_int" to_int (tarrow tnat tint) ;
+    test "type peano add" (
+      let_in "zero" (fold (c'"zero" unit) !?%tnat) @@
+      let_in "succ" (func "pred" !?%tnat @@
+        fold (c'"succ" !%"pred") !?%tnat
+      ) @@
+      rec_ "add" !?% (tarrow tnat (tarrow tnat tnat)) @@
+      func "x" !?%tnat @@ func "y" !?%tnat @@
+      match_ (unfold !%"y") [
+        "zero" , ("_" , !%"x") ;
+        "succ" , ("pred_y" , !%"add" <|% (!%"succ" @% !%"x") <|% !%"pred_y") ;
+      ]
+    ) (tarrow tnat (tarrow tnat tnat)) ;
   ) ;
+  test "recursive values inhabit all types: int" (
+    rec_ "self" !?%tint !%"self"
+  ) tint ;
+  test "recursive values inhabit all types: string" (
+    rec_ "self" !?%tstring !%"self"
+  ) tstring ;
   ()
-
-
 
 let () =
   test_eval () ;

@@ -16,6 +16,7 @@ let (+%) = add
 let func x ty body = Function (x , ty , body)
 let call a b = Call (a , b)
 let (@%) = call
+let (<|%) = call
 let tint = TBuiltin TInt
 let record lst = Record lst
 let vrecord lst = VRecord lst
@@ -48,3 +49,9 @@ let fold e t = annot (Fold e) t
 let unfold e = Unfold e
 let vfold e = VFold e
 let vunit = vrecord []
+let rec_ var ty body = annot (Rec (var , body)) ty
+let kv_of_lst lst =
+  List.mapi (fun i x -> string_of_int i , x) lst
+let tuple lst = record @@ kv_of_lst lst
+let ttuple lst = trecord @@ kv_of_lst lst
+let vtuple lst = vrecord @@ kv_of_lst lst

@@ -1,9 +1,9 @@
 type expr =
 | Builtin of builtin
 | Variable of var
-| Function of function_ 
-| LetIn of var * expr * expr (* let x = expr in body *)
+| Function of var * texpr * expr (* fun (x : ty) -> body *)
 | Call of expr * expr
+| LetIn of var * expr * expr (* let x = expr in body *)
 | Annotation of expr * texpr
 | Literal of literal
 | Record of (string * expr) list
@@ -12,9 +12,10 @@ type expr =
 | Match of expr * (string * (string * expr)) list
 | Fold of expr
 | Unfold of expr
+| Rec of string * expr (* rec self -> body *)
+(* | FunctionT of var * expr (* T : Type -> body *)
+| CallT of expr * texpr (* expr ty *) *)
 [@@deriving show { with_path = false }]
-
-and function_ = var * texpr * expr (* fun (x : ty) -> body *)
 
 and builtin =
 | BAdd of expr * expr
@@ -29,6 +30,7 @@ and value =
 | VCase of string * value
 | VClosure of var * expr * ctx
 | VFold of value
+| VRec of var * expr
 
 and tbuiltin =
 | TInt
@@ -42,6 +44,7 @@ and tvalue =
 | TRecord of (string * tvalue) list
 | TVariant of (string * tvalue) list
 | TMu of string * texpr (* mu var -> body *)
+(*| TFunction of string * texpr (* TFUN var -> body *) *)
 
 and texpr =
 | TEType
@@ -52,6 +55,8 @@ and texpr =
 | TEVariant of (string * texpr) list
 | TEMu of string * texpr (* mu var -> body *)
 | TEVar of string
+(* | TEFunction of string * texpr (* TFUN var -> body *)
+| TECall of texpr * texpr *)
 
 and var = string
 
@@ -85,6 +90,7 @@ let rec eval : ctx -> expr -> value = fun ctx expr ->
   | Builtin x -> eval_builtin ctx x
   | Variable x -> (
     match List.assoc_opt x ctx with
+    | Some (VRec (_ , body)) -> eval ctx body
     | Some y -> y
     | None -> failwith @@ F.sprintf "when evaluating, variable not found (%s)" x
   )
@@ -151,6 +157,10 @@ let rec eval : ctx -> expr -> value = fun ctx expr ->
     | VFold value' -> value'
     | _ -> failwith "unfolding a non-fold"
   )
+  | Rec (var , body) -> (
+    let ctx' = (var , VRec (var , body)) :: ctx in
+    eval ctx' body
+  )
 
 and eval_builtin : ctx -> builtin -> 'a = fun ctx b ->
   match b with
@@ -210,6 +220,12 @@ let rec subtype : tctx -> tvalue -> tvalue -> bool = fun tctx ty1 ty2 ->
     syntactic_teeq body1 body2
   )
   (* | TMu _ , _ | _ , TMu _ -> false *)
+  (* | TFunction (x1 , body1) , TFunction (x2 , body2) -> (
+    (* no alpha equivalence for higher order types. pure syntactic equality. *)
+    x1 = x2 &&
+    syntactic_teeq body1 body2
+  ) *)
+  (* | TFunction _ , _ | _ , TFunction _ -> false *)
   
 let rec teval : tctx -> texpr -> tvalue = fun tctx texp ->
   match texp with
@@ -239,6 +255,17 @@ let rec teval : tctx -> texpr -> tvalue = fun tctx texp ->
     | Some tv -> tv
     | None -> failwith "missing type variable"
   )
+  (* | TEFunction (var , body) -> TFunction (var , body) *)
+  (* | TECall (f , arg) -> (
+    let f' = teval tctx f in
+    let arg' = teval tctx arg in
+    match f' with
+    | TFunction (var , body) -> (
+      let tctx' = tctx_append_tvar var arg' tctx in
+      teval tctx' body
+    )
+    | _ -> failwith "type calling a non-typefunction"
+  ) *)
 
 
 let rec check : tctx -> expr -> tvalue -> unit = fun tctx expr ty ->
@@ -305,12 +332,18 @@ let rec check : tctx -> expr -> tvalue -> unit = fun tctx expr ty ->
     check tctx' expr body'
   )
   | Fold _ , _ -> failwith "folding a non-mu type"
+  | Rec (var , body) , _ -> (
+    let tctx' = tctx_append_var var ty tctx in
+    check tctx' body ty
+  )
   | Call _ , _
   | Annotation _ , _
   | Literal _ , _
   | Record _ , _
   | Field _ , _
   | Unfold _ , _
+  (* | FunctionT _ , _
+  | CallT _ , _ *)
   -> (
     let inferred_ty = synthesize tctx expr in
     assert (subtype tctx inferred_ty ty)
@@ -428,6 +461,8 @@ and synthesize : tctx -> expr -> tvalue = fun tctx expr ->
     )
     | _ -> failwith "unfolding a non-mu type"
   )
+  | Rec (_ , _) -> failwith "can not synthesize rec, need a type annotation"
+  (* | FunctionT (var , body) ->  *)
 
 and synthesize_builtin : tctx -> builtin -> tvalue = fun tctx b ->
   match b with
@@ -436,7 +471,6 @@ and synthesize_builtin : tctx -> builtin -> tvalue = fun tctx b ->
     check tctx e2 (TBuiltin TInt) ;
     TBuiltin TInt
   )
-
 
 module Debug = struct
   let rec texpr_of_tvalue : tvalue -> texpr = fun tv ->

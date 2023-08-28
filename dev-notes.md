@@ -18,20 +18,25 @@ X rec types with fold/unfold
   X tests
     X types
     X eval
-- rec values with rec keyword
-- error message
+X rec values with rec keyword
+  X implem
+  X tests
+    X eval
+    X types
+- polymorphism
+  - simple
+  - higher order
+  - CoC
+- multi file
 - misc
+  - tfield (access field from type records)
   - maps for records and variants
   - add subtyping between variants
     - add default inference for constructor
   - add subtyping between records
   - minimal size closures
   - test shadowing (in match among other things)
-- polymorphism
-  - simple
-  - higher order
-  - CoC
-- multi file
+- error message
 - partial eval
   - partial evaluator
   - literal -> expr
