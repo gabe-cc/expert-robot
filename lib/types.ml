@@ -360,14 +360,6 @@ let rec teval : tctx -> texpr -> texpr = fun tctx texp ->
 
 let rec check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
   match expr , ty with
-  | Builtin x , _ -> check_builtin tctx x ty
-  | Variable var , _ -> (
-    match tctx_lookup_var var tctx with
-    | Some var_ty -> (
-      Variable var , assert (subtype tctx var_ty ty)
-    )
-    | None -> failwith @@ F.sprintf "when type checking, variable not found (%s)" var
-  )
   | Function (var , texp , body) , TArrow (input , output) -> (
     let var_ty = teval tctx texp in
     assert (subtype tctx var_ty input) ;
@@ -377,12 +369,6 @@ let rec check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
     Function (var , texp , body') , () (* TODO: texp -> tv *)
   )
   | Function _ , _ -> failwith "function expects tarrow"
-  | LetIn (var , exp , body) , _ -> (
-    let exp' , tv = synthesize tctx exp in
-    let tctx' = tctx_append_var var tv tctx in
-    let body' , () = check tctx' body ty in
-    LetIn (var , exp' , body') , ()
-  )
   | Literal (LInt n) , TLiteral (LInt n') -> (
     Literal (LInt n) , assert (n = n')
   )
@@ -435,8 +421,10 @@ let rec check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
     let body' , () = check tctx' body ty in
     Rec (var , body') , ()
   )
-  (* | Builtin _ , _ *)
+  | Builtin _ , _
+  | Variable _ , _
   | Call _ , _
+  | LetIn _ , _
   | Annotation _ , _
   | Literal _ , _
   | Record _ , _
@@ -503,17 +491,7 @@ let rec check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
     | Partial _expr -> failwith "can only partially evaluate full-eval annotated expression"
   )
 
-
-and check_builtin : tctx -> builtin -> texpr -> expr * unit = fun tctx b ty ->
-  match b , ty with
-  | BAdd (e1 , e2) , TBuiltin TInt -> (
-    let e1' , () = check tctx e1 (TBuiltin TInt) in
-    let e2' , () = check tctx e2 (TBuiltin TInt) in
-    Builtin (BAdd (e1' , e2')) , ()
-  )
-  | BAdd _ , _ -> failwith "got bad type on add"
-
-(* should synthesize a tvalue *)
+(* invariant: synthesize a `tvalue` (result of teval) *)
 and synthesize : tctx -> expr -> expr * texpr = fun tctx expr ->
   let counter = Synthesize_log_steps.counter_inc () in
   if !Synthesize_log_steps.flag then (

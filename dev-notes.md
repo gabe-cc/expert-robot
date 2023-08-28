@@ -31,7 +31,7 @@ X static eval
 - polymorphism
   X collapse texpr and tvalues
   X deep polymorphism
-  - remove useless cases in check
+  X remove useless cases in check
   - parametric types
   - higher order
   - CoC
