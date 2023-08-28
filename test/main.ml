@@ -41,7 +41,7 @@ let test_eval () =
   test "add" (!+%21 +% !+%40) @@ vint 61 ;
   test_fail "add, int and string" (!+%21 +% !^%"40") ;
   test "app fun" (
-    let_in "inc" (func "x" tint @@ !%"x" +% !+%1) @@
+    let_in "inc" (func "x" !?%tint @@ !%"x" +% !+%1) @@
     !%"inc" @% !+%42
   ) @@ vint 43 ;
   test_fail "app non-func" (
@@ -76,24 +76,24 @@ let test_eval () =
   ) ;
   test "case" (
     let_in "content" !+%42 @@
-    c"lol" !%"content" (tvariant ["lol" , tint])
+    c"lol" !%"content" !?%(tvariant ["lol" , tint])
   ) @@ vc"lol" (vint 42) ;
   test "match-1" (
-    let_in "x" (c"foo" !+%7 (tvariant ["foo" , tint])) @@
+    let_in "x" (c"foo" !+%7 !?%(tvariant ["foo" , tint])) @@
     match_ !%"x" [
       "bar" , ("y" , !%"y" +% !+%1) ;
       "foo" , ("x" , !%"x" +% !%"x" +% !%"x") ;
     ]
   ) @@ vint 21 ;
   test "match-2" (
-    let_in "x" (c"bar" !+%7 (tvariant ["bar" , tint])) @@
+    let_in "x" (c"bar" !+%7 !?%(tvariant ["bar" , tint])) @@
     match_ !%"x" [
       "bar" , ("y" , !%"y" +% !+%1) ;
       "foo" , ("x" , !%"x" +% !%"x" +% !%"x") ;
     ]
   ) @@ vint 8 ;
   test_fail "missing match branch" (
-    let_in "x" (c"wee" !+%7 (tvariant ["wee" , tint])) @@
+    let_in "x" (c"wee" !+%7 !?%(tvariant ["wee" , tint])) @@
     match_ !%"x" [
       "bar" , ("y" , !%"y" +% !+%1) ;
       "foo" , ("x" , !%"x" +% !%"x" +% !%"x") ;
@@ -109,7 +109,7 @@ let test_synthesize () =
     let synth = toplevel_synthesize x in
     if (synth <> y) then (
       O.eprintf "@[<v>Different types.@;[@{<green>%a@}]@;vs@;[@{<red>%a@}]@;@]"
-      AT.pp_texpr synth AT.pp_texpr y ;
+      AT.pp_texpr !?%synth AT.pp_texpr !?%y ;
       raise Fail_synthesis
     )
   in
@@ -125,30 +125,30 @@ let test_synthesize () =
   test "add" (!+%23 +% !+%11) tint ;
   test_fail "add, int and string" (!+%23 +% !^%"lel") ;
   test "string" !^%"lel" tstring ;
-  test "annot" (annot !+%42 tint) tint ;
-  test_fail "wrong annot" (annot !+%42 tstring) ;
-  test "literal" (annot !+%42 (tlint 42)) (tlint 42) ;
-  test_fail "wrong literal" (annot !+%42 (tlint 43)) ;
+  test "annot" (annot !+%42 !?%tint) tint ;
+  test_fail "wrong annot" (annot !+%42 !?%tstring) ;
+  test "literal" (annot !+%42 !?%(tlint 42)) (tlint 42) ;
+  test_fail "wrong literal" (annot !+%42 !?%(tlint 43)) ;
   test "let in" (
-    let_in "x" (annot !^%"lol" (tlstring "lol")) @@
+    let_in "x" (annot !^%"lol" !?%(tlstring "lol")) @@
     !%"x"
   ) (tlstring "lol") ;
   test_fail "let in, missing var" (
-    let_in "x" (annot !^%"lol" (tlstring "lol")) @@
+    let_in "x" (annot !^%"lol" !?%(tlstring "lol")) @@
     !%"y"
   ) ;
   test "function" (
-    func "x" tint @@ !%"x" +% !%"x"
+    func "x" !?%tint @@ !%"x" +% !%"x"
   ) (tarrow tint tint) ;
   test "app" (
     let_in "f" (
-      func "x" tstring @@ !+%42
+      func "x" !?%tstring @@ !+%42
     ) @@
     !%"f" @% !^%"wee"
   ) tint ;
   test_fail "app wrong param" (
     let_in "f" (
-      func "x" tstring @@ !+%42
+      func "x" !?%tstring @@ !+%42
     ) @@
     !%"f" @% !+%42
   ) ;
@@ -181,29 +181,29 @@ let test_synthesize () =
       "bar" , tstring ;
     ] in
     test "case-1" (
-      c"foo" !+%42 tvar
+      c"foo" !+%42 !?%tvar
     ) tvar ;
     test "case-2" (
-      c"bar" !^%"answer" tvar
+      c"bar" !^%"answer" !?%tvar
     ) tvar ;
     test_fail "case non-matching variant" (
-      c"wee" !^%"lol" tvar
+      c"wee" !^%"lol" !?%tvar
     ) ;
     test "match" (
-      let_in "x" (c"foo" !+%42 tvar) @@
+      let_in "x" (c"foo" !+%42 !?%tvar) @@
       match_ !%"x" [
         "foo" , ("y" , !%"y") ;
         "bar" , ("y" , !+%23) ;
       ]
     ) tint ;
     test_fail "missing match branch" (
-      let_in "x" (c"foo" !+%42 tvar) @@
+      let_in "x" (c"foo" !+%42 !?%tvar) @@
       match_ !%"x" [
         "bar" , ("y" , !+%23) ;
       ]
     ) ;
     test_fail "extra match branch" (
-      let_in "x" (c"foo" !+%42 tvar) @@
+      let_in "x" (c"foo" !+%42 !?%tvar) @@
       match_ !%"x" [
         "foo" , ("y" , !%"y") ;
         "bar" , ("y" , !+%23) ;

@@ -1,7 +1,7 @@
 open Types
 
 let toplevel_eval = eval []
-let toplevel_synthesize = synthesize []
+let toplevel_synthesize = synthesize ([] , [])
 
 let let_in var exp body = LetIn (var , exp , body)
 let var x = Variable x
@@ -35,3 +35,5 @@ let tarrow input output = TArrow (input , output)
 let trecord lst = TRecord lst
 let tunit = trecord []
 let unit = record []
+let te = Debug.texpr_of_tvalue
+let (!?%) = te
