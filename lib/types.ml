@@ -30,27 +30,16 @@ and tbuiltin =
 | TInt
 | TString
 
-and tvalue =
+and texpr =
 | TType
-| TArrow of tvalue * tvalue
+| TArrow of texpr * texpr
 | TLiteral of literal
 | TBuiltin of tbuiltin
-| TRecord of (string * tvalue) list
-| TVariant of (string * tvalue) list
+| TRecord of (string * texpr) list
+| TVariant of (string * texpr) list
 | TMu of string * texpr (* mu var -> body *)
+| TVar of string
 (*| TFunction of string * texpr (* TFUN var -> body *) *)
-
-and texpr =
-| TEType
-| TEArrow of texpr * texpr
-| TELiteral of literal
-| TEBuiltin of tbuiltin
-| TERecord of (string * texpr) list
-| TEVariant of (string * texpr) list
-| TEMu of string * texpr (* mu var -> body *)
-| TEVar of string
-(* | TEFunction of string * texpr (* TFUN var -> body *)
-| TECall of texpr * texpr *)
 
 and var = string
 
@@ -61,7 +50,7 @@ and statement =
 and ctx = (string * ctx_member) list
 and ctx_member = {
   value : expr option ;
-  type_ : tvalue option ;
+  tvalue : texpr option ;
 }
 
 (*
@@ -69,24 +58,24 @@ and ctx_member = {
   var context used for type of regular variables
   type var context used for value of type variables
 *)
-and tctx = ctx * (string * tvalue) list
+and tctx = ctx * (string * texpr) list (* `texpr` should be tvalue *)
 
 let ctx_append x value : ctx -> ctx =
-  fun ctx -> (x , { value = Some value ; type_ = None }) :: ctx
+  fun ctx -> (x , { value = Some value ; tvalue = None }) :: ctx
 let ctx_append_type x tvalue : ctx -> ctx =
-  fun ctx -> (x , { value = None ; type_ = Some tvalue }) :: ctx
+  fun ctx -> (x , { value = None ; tvalue = Some tvalue }) :: ctx
 let ctx_append_full x value tvalue : ctx -> ctx =
-  fun ctx -> (x , { value = Some value ; type_ = Some tvalue }) :: ctx
+  fun ctx -> (x , { value = Some value ; tvalue = Some tvalue }) :: ctx
 let tctx_append_var x tval : tctx -> tctx =
   fun (vars , tvars) -> ctx_append_type x tval vars , tvars
-let tctx_lookup_var x : tctx -> tvalue option =
+let tctx_lookup_var x : tctx -> texpr option =
   fun (vars , _tvars) -> (
   Option.bind (List.assoc_opt x vars) @@ fun x ->
-  x.type_
+  x.tvalue
 )
 let tctx_append_tvar x tval : tctx -> tctx =
   fun (vars , tvars) -> vars , (x , tval) :: tvars
-let tctx_lookup_tvar x : tctx -> tvalue option =
+let tctx_lookup_tvar x : tctx -> texpr option =
   fun (_vars , tvars) -> List.assoc_opt x tvars
 let tctx_closure (new_vars : ctx) : tctx -> tctx =
   fun (_old_vars , _tvars) -> new_vars , []
@@ -134,9 +123,9 @@ let rec eval : ctx -> expr -> eval_result = fun ctx expr ->
   | Builtin x -> eval_builtin ctx x
   | Variable x -> (
     match List.assoc_opt x ctx with
-    | Some { value = Some (Rec (_ , body)) ; type_ = _ } -> eval ctx body
-    | Some { value = Some y ; type_ = _ } -> full y
-    | Some { value = None ; type_ = _ } -> partial expr
+    | Some { value = Some (Rec (_ , body)) ; tvalue = _ } -> eval ctx body
+    | Some { value = Some y ; tvalue = _ } -> full y
+    | Some { value = None ; tvalue = _ } -> partial expr
     | None -> failwith @@ F.sprintf "when evaluating, variable not found (%s)" x
   )
   | Function (var , _ty , body) -> full @@ Closure (var , body , ctx)
@@ -240,7 +229,8 @@ and eval_builtin : ctx -> builtin -> 'a = fun ctx b ->
 let syntactic_teeq : texpr -> texpr -> bool = fun ty1 ty2 -> ty1 = ty2
 
 (* For now, this is mostly equality, aside from literals *)
-let rec subtype : tctx -> tvalue -> tvalue -> bool = fun tctx ty1 ty2 ->
+(* This should be only on values. *)
+let rec subtype : tctx -> texpr -> texpr -> bool = fun tctx ty1 ty2 ->
   match ty1 , ty2 with
   | TType , TType -> true
   | TType , _ | _ , TType -> false
@@ -281,7 +271,11 @@ let rec subtype : tctx -> tvalue -> tvalue -> bool = fun tctx ty1 ty2 ->
     x1 = x2 &&
     syntactic_teeq body1 body2
   )
-  (* | TMu _ , _ | _ , TMu _ -> false *)
+  | TMu _ , _ | _ , TMu _ -> false
+  | TVar x , TVar x' when x = x' -> true
+  | TVar _ , _
+  (* | _ , TVar _ *)
+    -> failwith "should not try to subtype variables"
   (* | TFunction (x1 , body1) , TFunction (x2 , body2) -> (
     (* no alpha equivalence for higher order types. pure syntactic equality. *)
     x1 = x2 &&
@@ -289,30 +283,30 @@ let rec subtype : tctx -> tvalue -> tvalue -> bool = fun tctx ty1 ty2 ->
   ) *)
   (* | TFunction _ , _ | _ , TFunction _ -> false *)
   
-let rec teval : tctx -> texpr -> tvalue = fun tctx texp ->
+let rec teval : tctx -> texpr -> texpr = fun tctx texp ->
   match texp with
-  | TEType -> TType
-  | TEArrow (input , output) -> (
+  | TType -> TType
+  | TArrow (input , output) -> (
     let input' = teval tctx input in
     let output' = teval tctx output in
     TArrow (input' , output')
   )
-  | TELiteral lit -> TLiteral lit
-  | TEBuiltin b -> TBuiltin b
-  | TERecord lst -> (
+  | TLiteral lit -> TLiteral lit
+  | TBuiltin b -> TBuiltin b
+  | TRecord lst -> (
     let lst' = lst |> List.map (fun (name , content) -> 
       name , teval tctx content    
     ) in
     TRecord lst'
   )
-  | TEVariant lst -> (
+  | TVariant lst -> (
     let lst' = lst |> List.map (fun (name , content) -> 
       name , teval tctx content    
     ) in
     TVariant lst'
   )
-  | TEMu (var , body) -> TMu (var , body)
-  | TEVar var -> (
+  | TMu (var , body) -> TMu (var , body)
+  | TVar var -> (
     match tctx_lookup_tvar var tctx with
     | Some tv -> tv
     | None -> failwith "missing type variable"
@@ -330,7 +324,7 @@ let rec teval : tctx -> texpr -> tvalue = fun tctx texp ->
   ) *)
 
 
-let rec check : tctx -> expr -> tvalue -> expr * unit = fun tctx expr ty ->
+let rec check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
   match expr , ty with
   | Builtin x , _ -> check_builtin tctx x ty
   | Variable var , _ -> (
@@ -419,7 +413,7 @@ let rec check : tctx -> expr -> tvalue -> expr * unit = fun tctx expr ty ->
     let expr' , inferred_ty = synthesize tctx expr in
     if not (subtype tctx inferred_ty ty) then (
       failwith @@ Format.asprintf "@[<v>When checking expression:@;%a@;Inferred type was:@;%a@;But expected type was:@;%a@;@]"
-        pp_expr expr pp_tvalue inferred_ty pp_tvalue ty
+        pp_expr expr pp_texpr inferred_ty pp_texpr ty
     ) ;
     expr' , ()
   )
@@ -428,11 +422,11 @@ let rec check : tctx -> expr -> tvalue -> expr * unit = fun tctx expr ty ->
       ctx |> List.fold_left (fun acc (var , ctxm) ->
         let expr =
           match ctxm with
-          | { value = Some x ; type_ = _ } -> x
-          | { value = None ; type_ = _ } -> failwith "can't synthesize hole in closure context"
+          | { value = Some x ; tvalue = _ } -> x
+          | { value = None ; tvalue = _ } -> failwith "can't synthesize hole in closure context"
         in
         let ty =
-          match ctxm.type_ with
+          match ctxm.tvalue with
           | Some ty -> ty
           | None -> (
             let tctx' = tctx_closure acc tctx in
@@ -475,7 +469,7 @@ let rec check : tctx -> expr -> tvalue -> expr * unit = fun tctx expr ty ->
   )
 
 
-and check_builtin : tctx -> builtin -> tvalue -> expr * unit = fun tctx b ty ->
+and check_builtin : tctx -> builtin -> texpr -> expr * unit = fun tctx b ty ->
   match b , ty with
   | BAdd (e1 , e2) , TBuiltin TInt -> (
     let e1' , () = check tctx e1 (TBuiltin TInt) in
@@ -484,7 +478,8 @@ and check_builtin : tctx -> builtin -> tvalue -> expr * unit = fun tctx b ty ->
   )
   | BAdd _ , _ -> failwith "got bad type on add"
 
-and synthesize : tctx -> expr -> expr * tvalue = fun tctx expr ->
+(* should synthesize a tvalue *)
+and synthesize : tctx -> expr -> expr * texpr = fun tctx expr ->
   match expr with
   | Builtin x -> synthesize_builtin tctx x
   | Variable var -> (
@@ -612,27 +607,10 @@ and synthesize : tctx -> expr -> expr * tvalue = fun tctx expr ->
   )
   (* | FunctionT (var , body) ->  *)
 
-and synthesize_builtin : tctx -> builtin -> expr * tvalue = fun tctx b ->
+and synthesize_builtin : tctx -> builtin -> expr * texpr = fun tctx b ->
   match b with
   | BAdd (e1 , e2) -> (
     let e1' , () = check tctx e1 (TBuiltin TInt) in
     let e2' , () = check tctx e2 (TBuiltin TInt) in
     Builtin (BAdd (e1' , e2')) , TBuiltin TInt
   )
-
-module Debug = struct
-  let rec texpr_of_tvalue : tvalue -> texpr = fun tv ->
-    let (!) = texpr_of_tvalue in
-    match tv with
-    | TType -> TEType
-    | TArrow (a , b) -> TEArrow (!a , !b)
-    | TLiteral lit -> TELiteral lit
-    | TBuiltin b -> TEBuiltin b
-    | TRecord lst -> TERecord (
-      lst |> List.map (fun (x , y) -> x , !y)
-    )
-    | TVariant lst -> TEVariant (
-      lst |> List.map (fun (x , y) -> x , !y)
-    )
-    | TMu (x , y) -> TEMu (x , y)
-end

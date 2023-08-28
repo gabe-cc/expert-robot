@@ -55,7 +55,7 @@ let test_eval () =
   test "add" (!+%21 +% !+%40) @@ !+%61 ;
   test_fail "add, int and string" (!+%21 +% !^%"40") ;
   test "app fun" (
-    let_in "inc" (func "x" !?%tint @@ !%"x" +% !+%1) @@
+    let_in "inc" (func "x" tint @@ !%"x" +% !+%1) @@
     !%"inc" @% !+%42
   ) @@ !+%43 ;
   test_fail "app non-func" (
@@ -90,24 +90,24 @@ let test_eval () =
   ) ;
   test "case" (
     let_in "content" !+%42 @@
-    c"lol" !%"content" !?%(tvariant ["lol" , tint])
+    c"lol" !%"content" (tvariant ["lol" , tint])
   ) @@ c'"lol" (!+%42) ;
   test "match-1" (
-    let_in "x" (c"foo" !+%7 !?%(tvariant ["foo" , tint])) @@
+    let_in "x" (c"foo" !+%7 (tvariant ["foo" , tint])) @@
     match_ !%"x" [
       "bar" , ("y" , !%"y" +% !+%1) ;
       "foo" , ("x" , !%"x" +% !%"x" +% !%"x") ;
     ]
   ) @@ !+%21 ;
   test "match-2" (
-    let_in "x" (c"bar" !+%7 !?%(tvariant ["bar" , tint])) @@
+    let_in "x" (c"bar" !+%7 (tvariant ["bar" , tint])) @@
     match_ !%"x" [
       "bar" , ("y" , !%"y" +% !+%1) ;
       "foo" , ("x" , !%"x" +% !%"x" +% !%"x") ;
     ]
   ) @@ !+%8 ;
   test_fail "missing match branch" (
-    let_in "x" (c"wee" !+%7 !?%(tvariant ["wee" , tint])) @@
+    let_in "x" (c"wee" !+%7 (tvariant ["wee" , tint])) @@
     match_ !%"x" [
       "bar" , ("y" , !%"y" +% !+%1) ;
       "foo" , ("x" , !%"x" +% !%"x" +% !%"x") ;
@@ -116,25 +116,25 @@ let test_eval () =
   (
     let tnat =
       tmu "self" @@ 
-      tevariant [
-        "zero" , teunit ;
-        "succ" , tevar "self" ;
+      tvariant [
+        "zero" , tunit ;
+        "succ" , tvar "self" ;
       ]
     in
-    let zero = fold (c'"zero" unit) !?%tnat in
-    let succ = func "x" !?%tnat @@ fold (c'"succ" !%"x") !?%tnat in
+    let zero = fold (c'"zero" unit) tnat in
+    let succ = func "x" tnat @@ fold (c'"succ" !%"x") tnat in
     test "pred function" (
       let_in "zero" zero @@
       let_in "succ" succ @@
       let_in "pred" (
-        func "x" !?%tnat @@
+        func "x" tnat @@
         match_ (unfold !%"x") [
           "zero" , ("_" , !%"zero") ;
           "succ" , ("pred" , !%"pred") ;
         ]
       ) @@
       let_in "to_int" (
-        func "x" !?%tnat @@
+        func "x" tnat @@
         match_ (unfold !%"x") [
           "zero" , ("_" , !+%0) ;
           "succ" , ("_" , !+%1) ;
@@ -151,8 +151,8 @@ let test_eval () =
       "2" , !+%0 ; 
     ]) ;
     let to_int =
-      rec_ "self" !?%(tarrow tnat tint) @@
-      func "x" !?%tnat @@
+      rec_ "self" (tarrow tnat tint) @@
+      func "x" tnat @@
       match_ (unfold !%"x") [
         "zero" , ("_" , !+%0) ;
         "succ" , ("pred" , !+%1 +% (!%"self" @% !%"pred")) ;
@@ -174,8 +174,8 @@ let test_eval () =
       let_in "succ" succ @@
       let_in "to_int" to_int @@
       let_in "add" (
-        rec_ "add" !?% (tarrow tnat (tarrow tnat tnat)) @@
-        func "x" !?%tnat @@ func "y" !?%tnat @@
+        rec_ "add"  (tarrow tnat (tarrow tnat tnat)) @@
+        func "x" tnat @@ func "y" tnat @@
         match_ (unfold !%"y") [
           "zero" , ("_" , !%"x") ;
           "succ" , ("pred_y" , !%"add" <|% (!%"succ" @% !%"x") <|% !%"pred_y") ;
@@ -206,7 +206,7 @@ let test_synthesize () =
     let _ , synth = toplevel_synthesize x in
     if (synth <> y) then (
       O.eprintf "@[<v>Different types.@;[@{<green>%a@}]@;vs@;[@{<red>%a@}]@;@]"
-      AT.pp_texpr !?%synth AT.pp_texpr !?%y ;
+      AT.pp_texpr synth AT.pp_texpr y ;
       raise Fail_synthesis
     )
   in
@@ -221,7 +221,7 @@ let test_synthesize () =
     ) ;
     if (synth <> z) then (
       O.eprintf "@[<v>Different types.@;[@{<green>%a@}]@;vs@;[@{<red>%a@}]@;@]"
-      AT.pp_texpr !?%synth AT.pp_texpr !?%z ;
+      AT.pp_texpr synth AT.pp_texpr z ;
       raise Fail_synthesis
     )
   in
@@ -237,30 +237,30 @@ let test_synthesize () =
   test "add" (!+%23 +% !+%11) tint ;
   test_fail "add, int and string" (!+%23 +% !^%"lel") ;
   test "string" !^%"lel" tstring ;
-  test "annot" (annot !+%42 !?%tint) tint ;
-  test_fail "wrong annot" (annot !+%42 !?%tstring) ;
-  test "literal" (annot !+%42 !?%(tlint 42)) (tlint 42) ;
-  test_fail "wrong literal" (annot !+%42 !?%(tlint 43)) ;
+  test "annot" (annot !+%42 tint) tint ;
+  test_fail "wrong annot" (annot !+%42 tstring) ;
+  test "literal" (annot !+%42 (tlint 42)) (tlint 42) ;
+  test_fail "wrong literal" (annot !+%42 (tlint 43)) ;
   test "let in" (
-    let_in "x" (annot !^%"lol" !?%(tlstring "lol")) @@
+    let_in "x" (annot !^%"lol" (tlstring "lol")) @@
     !%"x"
   ) (tlstring "lol") ;
   test_fail "let in, missing var" (
-    let_in "x" (annot !^%"lol" !?%(tlstring "lol")) @@
+    let_in "x" (annot !^%"lol" (tlstring "lol")) @@
     !%"y"
   ) ;
   test "function" (
-    func "x" !?%tint @@ !%"x" +% !%"x"
+    func "x" tint @@ !%"x" +% !%"x"
   ) (tarrow tint tint) ;
   test "app" (
     let_in "f" (
-      func "x" !?%tstring @@ !+%42
+      func "x" tstring @@ !+%42
     ) @@
     !%"f" @% !^%"wee"
   ) tint ;
   test_fail "app wrong param" (
     let_in "f" (
-      func "x" !?%tstring @@ !+%42
+      func "x" tstring @@ !+%42
     ) @@
     !%"f" @% !+%42
   ) ;
@@ -293,29 +293,29 @@ let test_synthesize () =
       "bar" , tstring ;
     ] in
     test "case-1" (
-      c"foo" !+%42 !?%tvar
+      c"foo" !+%42 tvar
     ) tvar ;
     test "case-2" (
-      c"bar" !^%"answer" !?%tvar
+      c"bar" !^%"answer" tvar
     ) tvar ;
     test_fail "case non-matching variant" (
-      c"wee" !^%"lol" !?%tvar
+      c"wee" !^%"lol" tvar
     ) ;
     test "match" (
-      let_in "x" (c"foo" !+%42 !?%tvar) @@
+      let_in "x" (c"foo" !+%42 tvar) @@
       match_ !%"x" [
         "foo" , ("y" , !%"y") ;
         "bar" , ("y" , !+%23) ;
       ]
     ) tint ;
     test_fail "missing match branch" (
-      let_in "x" (c"foo" !+%42 !?%tvar) @@
+      let_in "x" (c"foo" !+%42 tvar) @@
       match_ !%"x" [
         "bar" , ("y" , !+%23) ;
       ]
     ) ;
     test_fail "extra match branch" (
-      let_in "x" (c"foo" !+%42 !?%tvar) @@
+      let_in "x" (c"foo" !+%42 tvar) @@
       match_ !%"x" [
         "foo" , ("y" , !%"y") ;
         "bar" , ("y" , !+%23) ;
@@ -326,63 +326,63 @@ let test_synthesize () =
   (
     let tnat =
       tmu "self" @@ 
-      tevariant [
-        "zero" , teunit ;
-        "succ" , tevar "self" ;
+      tvariant [
+        "zero" , tunit ;
+        "succ" , tvar "self" ;
       ]
     in
     test "recursive nat 0" (
-      fold (c'"zero" unit) !?%tnat
+      fold (c'"zero" unit) tnat
     ) tnat ;
     test "recursive nat 1" (
-      let_in "x" (fold (c'"zero" unit) !?%tnat) @@
-      fold (c'"succ" !%"x") !?%tnat
+      let_in "x" (fold (c'"zero" unit) tnat) @@
+      fold (c'"succ" !%"x") tnat
     ) tnat ;
     test "recursive constructor wrappers" (
-      let_in "zero" (fold (c'"zero" unit) !?%tnat) @@
-      let_in "succ" (func "pred" !?%tnat @@
-        fold (c'"succ" !%"pred") !?%tnat
+      let_in "zero" (fold (c'"zero" unit) tnat) @@
+      let_in "succ" (func "pred" tnat @@
+        fold (c'"succ" !%"pred") tnat
       ) @@
       !%"succ" @% !%"succ" @% !%"zero"
     ) tnat ;
     test_fail "recursive constructor wrappers, mutant 0" (
-      let_in "zero" (fold (c'"zero" unit) !?%tnat) @@
-      let_in "succ" (func "pred" !?%tnat @@
+      let_in "zero" (fold (c'"zero" unit) tnat) @@
+      let_in "succ" (func "pred" tnat @@
        (c'"succ" !%"pred")
       ) @@
       !%"succ" @% !%"succ" @% !%"zero"
     ) ;
     test_fail "recursive constructor wrappers, mutant 1" (
-      let_in "zero" (fold (c'"zero" unit) !?%tnat) @@
-      let_in "succ" (func "pred" !?%tnat @@
-        fold (c'"succ" !%"pred") !?%tnat
+      let_in "zero" (fold (c'"zero" unit) tnat) @@
+      let_in "succ" (func "pred" tnat @@
+        fold (c'"succ" !%"pred") tnat
       ) @@
       !%"succ" @% !%"suc" @% !%"zero"
     ) ;
     test "recursive nat matching" (
-      let_in "zero" (fold (c'"zero" unit) !?%tnat) @@
+      let_in "zero" (fold (c'"zero" unit) tnat) @@
       match_ (unfold !%"zero") [
         "zero" , ("_" , !^%"foo") ;
         "succ" , ("_" , !^%"bar") ;
       ]
     ) tstring ;
     test "pred function" (
-      func "x" !?%tnat @@
+      func "x" tnat @@
       match_ (unfold !%"x") [
-        "zero" , ("_" , (fold (c'"zero" unit) !?%tnat)) ;
+        "zero" , ("_" , (fold (c'"zero" unit) tnat)) ;
         "succ" , ("pred" , !%"pred") ;
       ]
     ) (tarrow tnat tnat) ;
     test_fail "pred function, mutant 0" (
-      func "x" !?%tnat @@
+      func "x" tnat @@
       match_ (unfold !%"x") [
-        "zero" , ("_" , (fold (c'"zero" unit) !?%tnat)) ;
+        "zero" , ("_" , (fold (c'"zero" unit) tnat)) ;
         "succ" , ("pred" , !+%42) ;
       ]
     ) ;
     let to_int =
-      rec_ "self" !?%(tarrow tnat tint) @@
-      func "x" !?%tnat @@
+      rec_ "self" (tarrow tnat tint) @@
+      func "x" tnat @@
       match_ (unfold !%"x") [
         "zero" , ("_" , !+%0) ;
         "succ" , ("pred" , !+%1 +% (!%"self" @% !%"pred")) ;
@@ -390,12 +390,12 @@ let test_synthesize () =
     in
     test "type peano to_int" to_int (tarrow tnat tint) ;
     test "type peano add" (
-      let_in "zero" (fold (c'"zero" unit) !?%tnat) @@
-      let_in "succ" (func "pred" !?%tnat @@
-        fold (c'"succ" !%"pred") !?%tnat
+      let_in "zero" (fold (c'"zero" unit) tnat) @@
+      let_in "succ" (func "pred" tnat @@
+        fold (c'"succ" !%"pred") tnat
       ) @@
-      rec_ "add" !?% (tarrow tnat (tarrow tnat tnat)) @@
-      func "x" !?%tnat @@ func "y" !?%tnat @@
+      rec_ "add"  (tarrow tnat (tarrow tnat tnat)) @@
+      func "x" tnat @@ func "y" tnat @@
       match_ (unfold !%"y") [
         "zero" , ("_" , !%"x") ;
         "succ" , ("pred_y" , !%"add" <|% (!%"succ" @% !%"x") <|% !%"pred_y") ;
@@ -403,21 +403,21 @@ let test_synthesize () =
     ) (tarrow tnat (tarrow tnat tnat)) ;
   ) ;
   test "recursive values inhabit all types: int" (
-    rec_ "self" !?%tint !%"self"
+    rec_ "self" tint !%"self"
   ) tint ;
   test "recursive values inhabit all types: string" (
-    rec_ "self" !?%tstring !%"self"
+    rec_ "self" tstring !%"self"
   ) tstring ;
   test_full "static eval full literal" (
-    annot (eval_full @@ !+%13 +% !+%29) !?%(tlint 42)
-  ) (annot (!+%42) !?%(tlint 42)) (tlint 42) ;
+    annot (eval_full @@ !+%13 +% !+%29) (tlint 42)
+  ) (annot (!+%42) (tlint 42)) (tlint 42) ;
   test_full "static eval partial fun body" (
-    func "x" !?%tint @@
+    func "x" tint @@
     eval_partial @@
     !%"x" +% (!+%7 +% !+%43)
-  ) (func "x" !?%tint @@ !%"x" +% !+%50) (tarrow tint tint) ;
+  ) (func "x" tint @@ !%"x" +% !+%50) (tarrow tint tint) ;
   test_fail "static eval full fun body" (
-    func "x" !?%tint @@
+    func "x" tint @@
     eval_full @@
     !%"x" +% (!+%7 +% !+%43)
   ) ;

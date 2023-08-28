@@ -29,7 +29,7 @@ X static eval
   X reconstruct term when synthesizing
   X tests
 - polymorphism
-  - collapse texpr and tvalues
+  X collapse texpr and tvalues
   - simple
   - higher order
   - CoC
