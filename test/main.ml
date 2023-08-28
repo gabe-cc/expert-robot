@@ -21,10 +21,18 @@ let test_eval () =
   let test name x y =
     let exception Fail_eval in
     test_basic (O.asprintf "@{<it>eval@} ; %s" name) @@ fun () ->
-    let x' = toplevel_eval x in
+    let x' =
+      match toplevel_eval x with
+      | Full x -> x
+      | Partial x -> (
+        O.eprintf "@[<v>Partial evalaution only.@;[@{<red>%a@}@]"
+          AT.pp_expr x ;
+        raise Fail_eval
+      )
+    in
     if (x' <> y) then (
       O.eprintf "@[<v>Different values.@;[@{<green>%a@}]@;vs@;[@{<red>%a@}]@;@]"
-      AT.pp_value x' AT.pp_value y ;
+      AT.pp_expr x' AT.pp_expr y ;
       raise Fail_eval
     )
   in
@@ -39,17 +47,17 @@ let test_eval () =
   test "let in" (
     let_in "x" !+%42 @@
     !%"x"
-  ) @@ vint 42 ;
+  ) @@ !+%42 ;
   test_fail "let in, missing var" (
     let_in "x" !+%42 @@
     !%"y"  
   ) ;
-  test "add" (!+%21 +% !+%40) @@ vint 61 ;
+  test "add" (!+%21 +% !+%40) @@ !+%61 ;
   test_fail "add, int and string" (!+%21 +% !^%"40") ;
   test "app fun" (
     let_in "inc" (func "x" !?%tint @@ !%"x" +% !+%1) @@
     !%"inc" @% !+%42
-  ) @@ vint 43 ;
+  ) @@ !+%43 ;
   test_fail "app non-func" (
     !+%42 @% !+%42
   ) ;
@@ -57,7 +65,7 @@ let test_eval () =
     let_in "x" !+%42 @@
     let_in "x" (!%"x" +% !+%1) @@
     !%"x"
-  ) @@ vint 43 ;
+  ) @@ !+%43 ;
   test "record" (
     let_in "foo" !+%1 @@
     let_in "bar" !+%2 @@
@@ -65,14 +73,14 @@ let test_eval () =
       "foo" , !%"foo" ;
       "bar" , !%"bar" ;
     ]  
-  ) @@ vrecord ["foo" , vint 1 ; "bar" , vint 2] ;
+  ) @@ record ["foo" , !+%1 ; "bar" , !+%2] ;
   test "field" (
     let_in "my_record" (record [
       "a" , !+%144 ;
       "b" , !+%123 ;
     ]) @@
     !%"my_record" /% "b"
-  ) @@ vint 123 ;
+  ) @@ !+%123 ;
   test_fail "missing field" (
     let_in "my_record" (record [
       "a" , !+%144 ;
@@ -83,21 +91,21 @@ let test_eval () =
   test "case" (
     let_in "content" !+%42 @@
     c"lol" !%"content" !?%(tvariant ["lol" , tint])
-  ) @@ vc"lol" (vint 42) ;
+  ) @@ c'"lol" (!+%42) ;
   test "match-1" (
     let_in "x" (c"foo" !+%7 !?%(tvariant ["foo" , tint])) @@
     match_ !%"x" [
       "bar" , ("y" , !%"y" +% !+%1) ;
       "foo" , ("x" , !%"x" +% !%"x" +% !%"x") ;
     ]
-  ) @@ vint 21 ;
+  ) @@ !+%21 ;
   test "match-2" (
     let_in "x" (c"bar" !+%7 !?%(tvariant ["bar" , tint])) @@
     match_ !%"x" [
       "bar" , ("y" , !%"y" +% !+%1) ;
       "foo" , ("x" , !%"x" +% !%"x" +% !%"x") ;
     ]
-  ) @@ vint 8 ;
+  ) @@ !+%8 ;
   test_fail "missing match branch" (
     let_in "x" (c"wee" !+%7 !?%(tvariant ["wee" , tint])) @@
     match_ !%"x" [
@@ -137,10 +145,10 @@ let test_eval () =
         "1" , !%"to_int" @% !%"succ" @% !%"zero" ;
         "2" , !%"to_int" @% !%"pred" @% !%"succ" @% !%"zero" ;
       ]
-    ) (vrecord [
-      "0" , vint 0 ;
-      "1" , vint 1 ;
-      "2" , vint 0 ; 
+    ) (record [
+      "0" , !+%0 ;
+      "1" , !+%1 ;
+      "2" , !+%0 ; 
     ]) ;
     let to_int =
       rec_ "self" !?%(tarrow tnat tint) @@
@@ -160,7 +168,7 @@ let test_eval () =
         "2" , !%"to_int" @% !%"succ" @% !%"succ" @% !%"zero" ;
         "3" , !%"to_int" @% !%"succ" @% !%"succ" @% !%"succ" @% !%"zero" ;
       ]
-    ) (vtuple @@ List.map vint [0;1;2;3]) ;
+    ) (tuple @@ List.map (!+%) [0;1;2;3]) ;
     test "peano add" (
       let_in "zero" zero @@
       let_in "succ" succ @@
@@ -180,7 +188,7 @@ let test_eval () =
         !%"add" <|% !%"zero" <|% !%"succ" @% !%"zero";
         !%"add" <|% !%"succ" @% !%"zero" <|% !%"succ" @% !%"succ" @% !%"zero" ;
       ] ;
-    ) @@ vtuple @@ List.map vint [
+    ) @@ tuple @@ List.map (!+%) [
       0 ;
       1 ;
       2 ;

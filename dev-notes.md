@@ -1,6 +1,7 @@
 # basic setup
 opam switch create . 5.0.0
-opam install dune ocolor ocaml-lsp-server ocamlformat ppx_deriving
+opam install dune utop ocaml-lsp-server ocamlformat
+opam install ocolor ppx_deriving
 eval $(opam env)
 dune runtest --watch
 
@@ -23,7 +24,14 @@ X rec values with rec keyword
   X tests
     X eval
     X types
+- partial eval
+  - reconstruct term when synthesizing
+  - static eval (full or partial) construct
+  - inline
+  - partial evaluator
+  - tests
 - polymorphism
+  - collapse texpr and tvalues
   - simple
   - higher order
   - CoC
@@ -37,10 +45,6 @@ X rec values with rec keyword
   - minimal size closures
   - test shadowing (in match among other things)
 - error message
-- partial eval
-  - partial evaluator
-  - literal -> expr
-  - inline flag
 - closure for mu types (mu within mu)
 - mutually recursive mu types
 - CLI

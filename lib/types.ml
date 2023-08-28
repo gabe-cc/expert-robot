@@ -13,6 +13,8 @@ type expr =
 | Fold of expr
 | Unfold of expr
 | Rec of string * expr (* rec self -> body *)
+| Closure of var * expr * ctx
+| Eval of bool * expr (* static_eval (full?) expr *)
 (* | FunctionT of var * expr (* T : Type -> body *)
 | CallT of expr * texpr (* expr ty *) *)
 [@@deriving show { with_path = false }]
@@ -23,14 +25,6 @@ and builtin =
 and literal =
 | LInt of int
 | LString of string
-
-and value =
-| VLiteral of literal
-| VRecord of (string * value) list
-| VCase of string * value
-| VClosure of var * expr * ctx
-| VFold of value
-| VRec of var * expr
 
 and tbuiltin =
 | TInt
@@ -64,66 +58,105 @@ and statement =
 | SLet of var * expr
 | SExpr of expr
 
-and ctx = (string * value) list
+and ctx = (string * ctx_member) list
+and ctx_member = {
+  value : expr option ;
+  type_ : tvalue option ;
+}
 
 (*
   (var context * type var context)
   var context used for type of regular variables
   type var context used for value of type variables
 *)
-and tctx = (string * tvalue) list * (string * tvalue) list
+and tctx = ctx * (string * tvalue) list
 
-let tctx_append_var x tval: tctx -> tctx =
-  fun (vars , tvars) -> (x , tval) :: vars , tvars
+let ctx_append x value : ctx -> ctx =
+  fun ctx -> (x , { value = Some value ; type_ = None }) :: ctx
+let ctx_append_type x tvalue : ctx -> ctx =
+  fun ctx -> (x , { value = None ; type_ = Some tvalue }) :: ctx
+let ctx_append_full x value tvalue : ctx -> ctx =
+  fun ctx -> (x , { value = Some value ; type_ = Some tvalue }) :: ctx
+let tctx_append_var x tval : tctx -> tctx =
+  fun (vars , tvars) -> ctx_append_type x tval vars , tvars
 let tctx_lookup_var x : tctx -> tvalue option =
-  fun (vars , _tvars) -> List.assoc_opt x vars
+  fun (vars , _tvars) -> (
+  Option.bind (List.assoc_opt x vars) @@ fun x ->
+  x.type_
+)
 let tctx_append_tvar x tval : tctx -> tctx =
   fun (vars , tvars) -> vars , (x , tval) :: tvars
 let tctx_lookup_tvar x : tctx -> tvalue option =
   fun (_vars , tvars) -> List.assoc_opt x tvars
-
+let tctx_closure (new_vars : ctx) : tctx -> tctx =
+  fun (_old_vars , _tvars) -> new_vars , []
+let tctx_to_ctx : tctx -> ctx = fst
 
 module F = Format
 
-let rec eval : ctx -> expr -> value = fun ctx expr ->
+type eval_result =
+| Full of expr (* should be a value *)
+| Partial of expr (* for strong norm purposes *)
+let (let*) x f =
+  match x with
+  | Full x -> Full (f x)
+  | Partial x -> Partial (f x)
+let (let+) x f =
+  match x with
+  | Full x -> f x
+  | Partial x -> (
+    match f x with
+    | Full x | Partial x -> Partial x
+  )
+let full x = Full x
+let partial x = Partial x
+
+
+
+let rec eval : ctx -> expr -> eval_result = fun ctx expr ->
   match expr with
   | Builtin x -> eval_builtin ctx x
   | Variable x -> (
     match List.assoc_opt x ctx with
-    | Some (VRec (_ , body)) -> eval ctx body
-    | Some y -> y
+    | Some { value = Some (Rec (_ , body)) ; type_ = _ } -> eval ctx body
+    | Some { value = Some y ; type_ = _ } -> full y
+    | Some { value = None ; type_ = _ } -> partial expr
     | None -> failwith @@ F.sprintf "when evaluating, variable not found (%s)" x
   )
-  | Function (var , _ty , body) -> VClosure (var , body , ctx)
+  | Function (var , _ty , body) -> full @@ Closure (var , body , ctx)
   | LetIn (var , expr , body) -> (
-    let value = eval ctx expr in
-    let ctx' = (var , value) :: ctx in
+    let+ value = eval ctx expr in
+    let ctx' = ctx_append var value ctx in
     eval ctx' body
   )
   | Call (f , arg) -> (
-    let f' = eval ctx f in
-    let arg' = eval ctx arg in
+    let+ f' = eval ctx f in
+    let+ arg' = eval ctx arg in
     match f' with
-    | VClosure (v , body , ctx') -> (
-      let ctx'' = (v , arg') :: ctx' in
+    | Closure (v , body , ctx') -> (
+      let ctx'' = ctx_append v arg' ctx' in
       eval ctx'' body
     )
     | _ -> failwith "when evaluating call, got a non functional value"
   )
   | Annotation (expr , _) -> eval ctx expr
-  | Literal l -> VLiteral l
+  | Literal l -> full @@ Literal l
   | Record lst -> (
+    let is_full = ref true in
     let lst' =
-      List.map
-        (fun (name , content) -> name , eval ctx content)
-        lst
+      lst |> List.map (fun (name , content) -> name ,
+      match eval ctx content with
+      | Partial x -> (is_full := false ; x)
+      | Full x -> x
+      )
     in
-    VRecord lst'
+    (if !is_full then full else partial) @@
+    Record lst'
   )
   | Field (expr , name) -> (
-    let value = eval ctx expr in
+    let* value = eval ctx expr in
     match value with
-    | VRecord lst -> (
+    | Record lst -> (
       match List.assoc_opt name lst with
       | Some value' -> value'
       | None -> failwith @@ F.sprintf "when evaluating field, did not find field %s" name
@@ -131,16 +164,16 @@ let rec eval : ctx -> expr -> value = fun ctx expr ->
     | _ -> failwith "when evaluating field, got a non record"
   )
   | Case (name , expr) -> (
-    let value = eval ctx expr in
-    VCase (name , value)
+    let* value = eval ctx expr in
+    Case (name , value)
   )
   | Match (matchee , branches) -> (
-    let matchee' = eval ctx matchee in
+    let+ matchee' = eval ctx matchee in
     match matchee' with
-    | VCase (name , content) -> (
+    | Case (name , content) -> (
       match List.assoc_opt name branches with
       | Some (var , body) -> (
-        let ctx' = (var , content) :: ctx in
+        let ctx' = ctx_append var content ctx in
         eval ctx' body
       )
       | None -> failwith @@ F.sprintf "when evaluating match, branch (%s) was missing" name
@@ -148,29 +181,31 @@ let rec eval : ctx -> expr -> value = fun ctx expr ->
     | _ -> failwith "when evaluating match, got a non-case"
   )
   | Fold expr -> (
-    let value = eval ctx expr in
-    VFold value
+    let* value = eval ctx expr in
+    Fold value
   )
   | Unfold expr -> (
-    let value = eval ctx expr in
+    let* value = eval ctx expr in
     match value with
-    | VFold value' -> value'
+    | Fold value' -> value'
     | _ -> failwith "unfolding a non-fold"
   )
   | Rec (var , body) -> (
-    let ctx' = (var , VRec (var , body)) :: ctx in
+    let ctx' = ctx_append var (Rec (var , body)) ctx in
     eval ctx' body
   )
+  | Closure _ -> full expr
+  | Eval (_full , expr) -> eval ctx expr
 
 and eval_builtin : ctx -> builtin -> 'a = fun ctx b ->
   match b with
   | BAdd (e1 , e2) -> (
-    let value1 = eval ctx e1 in
-    let value2 = eval ctx e2 in
+    let+ value1 = eval ctx e1 in
+    let+ value2 = eval ctx e2 in
     match value1 , value2 with
-    | VLiteral (LInt x) , VLiteral (LInt y) -> VLiteral (LInt (x + y))
-    | _ , VLiteral (LInt _) -> failwith "when evaluating add, left arg was not an int"
-    | VLiteral (LInt _) , _ -> failwith "when evaluating add, right arg was not an int"
+    | Literal (LInt x) , Literal (LInt y) -> full @@ Literal (LInt (x + y))
+    | _ , Literal (LInt _) -> failwith "when evaluating add, left arg was not an int"
+    | Literal (LInt _) , _ -> failwith "when evaluating add, right arg was not an int"
     | _ , _ -> failwith "when evaluating add, no arg was an int"
   )
 
@@ -342,12 +377,37 @@ let rec check : tctx -> expr -> tvalue -> unit = fun tctx expr ty ->
   | Record _ , _
   | Field _ , _
   | Unfold _ , _
+  | Eval _ , _
   (* | FunctionT _ , _
   | CallT _ , _ *)
   -> (
     let inferred_ty = synthesize tctx expr in
     assert (subtype tctx inferred_ty ty)
   )
+  | Closure (var , body , ctx) , TArrow (input , output) -> (
+    let ctx' =
+      ctx |> List.fold_left (fun acc (var , ctxm) ->
+        let expr =
+          match ctxm with
+          | { value = Some x ; type_ = _ } -> x
+          | { value = None ; type_ = _ } -> failwith "can't synthesize hole in closure context"
+        in
+        let ty =
+          match ctxm.type_ with
+          | Some ty -> ty
+          | None -> (
+            let tctx' = tctx_closure acc tctx in
+            synthesize tctx' expr
+          )
+        in
+        ctx_append_full var expr ty acc
+      ) [] |> List.rev
+    in
+    let tctx' = tctx_closure ctx' tctx in
+    let tctx'' = tctx_append_var var input tctx' in
+    check tctx'' body output
+  )
+  | Closure _ , _ -> failwith "closure need a function type"
 
 and check_builtin : tctx -> builtin -> tvalue -> unit = fun tctx b ty ->
   match b , ty with
@@ -462,6 +522,13 @@ and synthesize : tctx -> expr -> tvalue = fun tctx expr ->
     | _ -> failwith "unfolding a non-mu type"
   )
   | Rec (_ , _) -> failwith "can not synthesize rec, need a type annotation"
+  | Closure _ -> failwith "can not synthesize closure, need a type annotation"
+  | Eval (full , expr) -> (
+    match eval (tctx_to_ctx tctx) expr with
+    | Full value -> synthesize tctx value
+    | Partial expr when not full-> synthesize tctx expr
+    | Partial _expr -> failwith "can only partially evaluate full-eval annotated expression"
+  )
   (* | FunctionT (var , body) ->  *)
 
 and synthesize_builtin : tctx -> builtin -> tvalue = fun tctx b ->
