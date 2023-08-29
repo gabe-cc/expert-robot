@@ -1,6 +1,7 @@
 open Types
 
 let toplevel_eval = eval []
+let toplevel_teval = teval ([] , [])
 let toplevel_synthesize = synthesize ([] , [])
 
 let let_in var exp body = LetIn (var , exp , body)
@@ -36,6 +37,7 @@ let trecord lst = TRecord lst
 let tunit = trecord []
 let unit = record []
 let fold e t = annot (Fold e) t
+let fold' e = Fold e
 let unfold e = Unfold e
 let rec_ var ty body = annot (Rec (var , body)) ty
 let kv_of_lst lst =
@@ -49,3 +51,8 @@ let funct var expr = FunctionT (var , expr)
 let callt expr texpr = CallT (expr , texpr)
 let tfunc var texpr = TFunction (var , texpr)
 let let_type_in var texpr body = LetInT (var , texpr , body)
+let tcall tf targ = TCall (tf , targ)
+let (!?%) = tvar
+let (@?%) = tcall
+let fc name content ty = fold (c' name content) ty
+let fc' name content = fold' (c' name content)

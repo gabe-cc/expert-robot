@@ -196,6 +196,34 @@ let test_eval () =
       3 ;
     ] ;
   ) ;
+  (
+    let list =
+      tfunc "A" @@ tmu "list" @@
+      tvariant [
+        "nil" , tunit ;
+        "cons" , ttuple [tvar "A" ; tvar "list"]
+      ]
+    in
+    test "parametric lists" (
+      let_type_in "list" list @@
+      let_in "nil" (
+        funct "X" @@
+        fc"nil" unit (tcall (tvar "list") (tvar "X"))
+      ) @@
+      let_in "cons" (
+        funct "X" @@
+        func "hd" (tvar "X") @@ func "tl" (tcall (tvar "list") (tvar "X")) @@
+        fc"cons" (tuple [ !%"hd" ; !%"tl"]) (!?%"list" @?% !?%"X")
+      ) @@
+      tuple [
+        callt !%"nil" tint ;
+        (callt !%"cons" tstring) <|% !^%"lol" <|% (callt !%"nil" tstring) ;
+      ]
+    ) (tuple [
+      fc'"nil" unit ;
+      fc'"cons" (tuple [!^%"lol" ; fc'"nil" unit]) ;
+    ]) ;  
+  ) ;
   ()
 
 let test_synthesize () =
@@ -204,7 +232,8 @@ let test_synthesize () =
     let exception Fail_synthesis in
     test_basic (O.asprintf "@{<it>synthesize@} ; %s" name) @@ fun () ->
     let _ , synth = toplevel_synthesize x in
-    if (synth <> y) then (
+    let y' = toplevel_teval y in
+    if (synth <> y') then (
       O.eprintf "@[<v>Different types.@;[@{<green>%a@}]@;vs@;[@{<red>%a@}]@;@]"
       AT.pp_texpr synth AT.pp_texpr y ;
       raise Fail_synthesis
@@ -219,7 +248,8 @@ let test_synthesize () =
       AT.pp_expr x' AT.pp_expr y ;
       raise Fail_synthesis    
     ) ;
-    if (synth <> z) then (
+    let z' = toplevel_teval z in
+    if (synth <> z') then (
       O.eprintf "@[<v>Different types.@;[@{<green>%a@}]@;vs@;[@{<red>%a@}]@;@]"
       AT.pp_texpr synth AT.pp_texpr z ;
       raise Fail_synthesis
@@ -490,16 +520,34 @@ let test_synthesize () =
         !%"is_foo" @% !%"bar" @% !^%"lol" ;
       ]
     ) (ttuple [bool ; bool]) ;
-    (* test "parametric lists" (
-      let_type_in "list" (
-        tfunc "A" @@ tmu "list" @@
-        tvariant [
-          "nil" , tunit ;
-          "cons" , ttuple [tvar "A" ; tvar "list"]
-        ]
+    let list =
+      tfunc "A" @@ tmu "list" @@
+      tvariant [
+        "nil" , tunit ;
+        "cons" , ttuple [tvar "A" ; tvar "list"]
+      ]
+    in
+    (* AT.Synthesize_log_steps.with_flag @@ fun () ->
+    AT.TEval_log_steps.with_flag @@ fun () -> *)
+    test "parametric lists" (
+      let_type_in "list" list @@
+      let_in "nil" (
+        funct "X" @@
+        fc"nil" unit (tcall (tvar "list") (tvar "X"))
       ) @@
-      let_in "nil" (funct "X" @@ c"nil" unit (tvar "list")) @@
-    ) () ; *)
+      let_in "cons" (
+        funct "X" @@
+        func "hd" (tvar "X") @@ func "tl" (tcall (tvar "list") (tvar "X")) @@
+        fc"cons" (tuple [ !%"hd" ; !%"tl"]) (!?%"list" @?% !?%"X")
+      ) @@
+      tuple [
+        callt !%"nil" tint ;
+        (callt !%"cons" tstring) <|% !^%"lol" <|% (callt !%"nil" tstring) ;
+      ]
+    ) (ttuple [
+      tcall list tint ;
+      tcall list tstring ;
+    ]) ;
   ) ;
   ()
 

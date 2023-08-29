@@ -41,6 +41,7 @@ and texpr =
 | TMu of string * texpr (* mu var -> body *)
 | TVar of string
 | TFunction of string * texpr (* TFUN var -> body *)
+| TCall of texpr * texpr (* type application *)
 
 and var = string
 
@@ -130,6 +131,7 @@ module Flag() = struct
 end
 
 module Eval_log_steps = Flag()
+module TEval_log_steps = Flag()
 module Synthesize_log_steps = Flag()
 
 (* subject reduction should hold *)
@@ -307,9 +309,15 @@ let rec subtype : tctx -> texpr -> texpr -> bool = fun tctx ty1 ty2 ->
     x1 = x2 &&
     syntactic_teeq body1 body2
   )
-  (* | TFunction _ , _ | _ , TFunction _ -> false *)
+  | TFunction _ , _ | _ , TFunction _ -> false
+  | TCall _ , _
+  (* | _ , TCall _ *)
+    -> failwith "should not try to subtype type applications"
   
 let rec teval : tctx -> texpr -> texpr = fun tctx texp ->
+  if !TEval_log_steps.flag then (
+    Format.printf "@[<v>TEval step:@;%a@]\n%!" pp_texpr texp 
+  ) ;
   match texp with
   | TType -> TType
   | TArrow (input , output) -> (
@@ -331,7 +339,11 @@ let rec teval : tctx -> texpr -> texpr = fun tctx texp ->
     ) in
     TVariant lst'
   )
-  | TMu (var , body) -> TMu (var , body)
+  | TMu (var , body) -> (
+    let tctx' = tctx_append_tvar_hole var tctx in
+    let body' = teval tctx' body in
+    TMu (var , body')
+  )
   | TVar var -> (
     match tctx_lookup_tvar var tctx with
     | Some (Some tv) -> tv
@@ -347,17 +359,23 @@ let rec teval : tctx -> texpr -> texpr = fun tctx texp ->
     let body' = teval tctx' body in
     TFunction (var , body')
   ) 
-  (* | TEFunction (var , body) -> TFunction (var , body) *)
-  (* | TECall (f , arg) -> (
+  | TCall (f , arg) -> (
     let f' = teval tctx f in
     let arg' = teval tctx arg in
+    (*
+      What kind of evaluation is 'teval' performing?
+      Strong evaluation (under the lambdas)?
+      If so, then we should accept calls to non-tfunctions, as we might get non-reduced variables there.
+      Better would be to split full evals from only partial evals, same as `eval`.
+    *)
     match f' with
     | TFunction (var , body) -> (
       let tctx' = tctx_append_tvar var arg' tctx in
       teval tctx' body
     )
-    | _ -> failwith "type calling a non-typefunction"
-  ) *)
+    | _ -> TCall (f' , arg')
+    (* | _ -> failwith "type calling a non-typefunction" *)
+  )
 
 
 let rec check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
@@ -648,6 +666,9 @@ and synthesize : tctx -> expr -> expr * texpr = fun tctx expr ->
   )
   | LetInT (var , texpr , body) -> (
     let tv = teval tctx texpr in
+    (* if !Synthesize_log_steps.flag then
+      Format.printf "@[<v>Let In:@;%a@;@]"
+      pp_texpr tv ; *)
     let tctx' = tctx_append_tvar var tv tctx in
     synthesize tctx' body
   )

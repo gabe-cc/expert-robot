@@ -28,19 +28,17 @@ X static eval
   X static eval (full or partial) construct
   X reconstruct term when synthesizing
   X tests
-- polymorphism
+X polymorphism
   X collapse texpr and tvalues
   X deep polymorphism
   X remove useless cases in check
   X let type in
-  - TCall
-  - parametric types
-  - higher order
-  - CoC
+  X TCall
+  X parametric types
 - multi file
 - misc
   - tfield (access field from type records)
-  - maps for records and variants
+  - maps for records and variants instead of lists
   - add subtyping between variants
     - add default inference for constructor
   - add subtyping between records
@@ -49,10 +47,15 @@ X static eval
   - let inline
   - partial evaluate function args
   - go through TODOs
-- error message
-- closure for mu types (mu within mu)
-- mutually recursive mu types
-- CLI
+  - closure for mu types (mu within mu)
+  - partial/full | strong/weak evaluation for types
 - grammar
+- error message
+- CLI
 - location
-- patterns
+- advanced
+  - mutually recursive mu types
+  - patterns
+  - higher order
+  - CoC
+
