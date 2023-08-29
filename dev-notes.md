@@ -32,6 +32,8 @@ X static eval
   X collapse texpr and tvalues
   X deep polymorphism
   X remove useless cases in check
+  X let type in
+  - TCall
   - parametric types
   - higher order
   - CoC

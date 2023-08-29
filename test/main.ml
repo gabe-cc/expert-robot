@@ -468,6 +468,39 @@ let test_synthesize () =
       (callt (callt !%"pair" tint) tstring)
     ) (tarrow tint @@ tarrow tstring @@ ttuple [tint ; tstring]) ;
   ) ;
+  (
+    let bool = tvariant [ "true" , tunit ; "false" , tunit ] in
+    test "let type in" (
+      let_type_in "bool" bool @@
+      let_in "true" (c"true" unit (tvar "bool")) @@
+      let_in "false" (c"false" unit (tvar "bool")) @@
+      let_type_in "foobar" (
+        tvariant [ "foo" , tint ; "bar" , tstring ]
+      ) @@
+      let_in "foo" (func "x" tint @@ c"foo" !%"x" (tvar "foobar")) @@
+      let_in "bar" (func "x" tstring @@ c"bar" !%"x" (tvar "foobar")) @@
+      let_in "is_foo" (func "x" (tvar "foobar") @@
+        match_ !%"x" [
+          "foo" , ("_" , !%"true") ;
+          "bar" , ("_" , !%"false") ;
+        ]
+      ) @@
+      tuple [
+        !%"is_foo" @% !%"foo" @% !+%42 ;
+        !%"is_foo" @% !%"bar" @% !^%"lol" ;
+      ]
+    ) (ttuple [bool ; bool]) ;
+    (* test "parametric lists" (
+      let_type_in "list" (
+        tfunc "A" @@ tmu "list" @@
+        tvariant [
+          "nil" , tunit ;
+          "cons" , ttuple [tvar "A" ; tvar "list"]
+        ]
+      ) @@
+      let_in "nil" (funct "X" @@ c"nil" unit (tvar "list")) @@
+    ) () ; *)
+  ) ;
   ()
 
 let () =

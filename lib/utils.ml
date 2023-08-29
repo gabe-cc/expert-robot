@@ -48,3 +48,4 @@ let tvar x = TVar x
 let funct var expr = FunctionT (var , expr)
 let callt expr texpr = CallT (expr , texpr)
 let tfunc var texpr = TFunction (var , texpr)
+let let_type_in var texpr body = LetInT (var , texpr , body)

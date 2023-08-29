@@ -17,6 +17,7 @@ type expr =
 | Eval of bool * expr (* static_eval (full?) expr *)
 | FunctionT of var * expr (* T : Type -> body *)
 | CallT of expr * texpr (* expr ty *)
+| LetInT of var * texpr * expr
 [@@deriving show { with_path = false }]
 
 and builtin =
@@ -225,6 +226,7 @@ let rec eval : ctx -> expr -> eval_result = fun ctx expr ->
     | Full _ -> failwith "callt on non functiont"
     | Partial expr' -> partial @@ CallT (expr' , texpr)
   )
+  | LetInT (_var , _texpr , body) -> eval ctx body
 
 and eval_builtin : ctx -> builtin -> 'a = fun ctx b ->
   match b with
@@ -432,6 +434,7 @@ let rec check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
   | Unfold _ , _
   | FunctionT _ , _
   | CallT _ , _
+  | LetInT _ , _
   -> (
     let expr' , inferred_ty = synthesize tctx expr in
     if not (subtype tctx inferred_ty ty) then (
@@ -642,6 +645,11 @@ and synthesize : tctx -> expr -> expr * texpr = fun tctx expr ->
       CallT (f' , arg) , body'
     )
     | _ -> failwith "callt on non-tfunction type"
+  )
+  | LetInT (var , texpr , body) -> (
+    let tv = teval tctx texpr in
+    let tctx' = tctx_append_tvar var tv tctx in
+    synthesize tctx' body
   )
 
 and synthesize_builtin : tctx -> builtin -> expr * texpr = fun tctx b ->
