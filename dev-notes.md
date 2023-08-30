@@ -36,6 +36,10 @@ X polymorphism
   X TCall
   X parametric types
 - multi file
+  X check statements
+  - namespaces
+  - link context and files
+  - build std lib
 - misc
   - tfield (access field from type records)
   - maps for records and variants instead of lists
@@ -48,12 +52,14 @@ X polymorphism
   - partial evaluate function args
   - go through TODOs
   - closure for mu types (mu within mu)
-  - partial/full | strong/weak evaluation for types
+  - cleanup partial/full | strong/weak evaluation for types
 - grammar
+- location
 - error message
 - CLI
-- location
 - advanced
+  - compile to python
+  - FFI
   - mutually recursive mu types
   - patterns
   - higher order

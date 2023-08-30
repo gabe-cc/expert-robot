@@ -2,7 +2,9 @@ open Types
 
 let toplevel_eval = eval []
 let toplevel_teval = teval ([] , [])
+(* let toplevel_teval_tctx = Debug.teval_tctx ([] , []) *)
 let toplevel_synthesize = synthesize ([] , [])
+let toplevel_synthesize_statements = synthesize_statements ([] , [])
 
 let let_in var exp body = LetIn (var , exp , body)
 let var x = Variable x
@@ -56,3 +58,5 @@ let (!?%) = tvar
 let (@?%) = tcall
 let fc name content ty = fold (c' name content) ty
 let fc' name content = fold' (c' name content)
+let slet var expr = SLet (var , expr)
+let stlet var texpr = SLetType (var , texpr)

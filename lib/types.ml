@@ -18,6 +18,8 @@ type expr =
 | FunctionT of var * expr (* T : Type -> body *)
 | CallT of expr * texpr (* expr ty *)
 | LetInT of var * texpr * expr
+(* | Namespace of statements
+| Namespace_access of expr * expr *)
 [@@deriving show { with_path = false }]
 
 and builtin =
@@ -42,13 +44,19 @@ and texpr =
 | TVar of string
 | TFunction of string * texpr (* TFUN var -> body *)
 | TCall of texpr * texpr (* type application *)
+(* | TNamespace of tctx
+| TNamespace_access of texpr * texpr *)
 
 and var = string
 
 and statement =
 | SLet of var * expr
+| SLetType of var * texpr
 | SExpr of expr
 
+and statements = statement list
+
+(* Context is reversed! The list is a stack: the beginning of the list is the _latest_ added value. Same for type context. *)
 and ctx = (string * ctx_member) list
 and ctx_member = {
   value : expr option ;
@@ -88,7 +96,7 @@ let tctx_to_ctx : tctx -> ctx = fst
 module F = Format
 
 (*
-  Only reason for something to be partial is if reducing if a variable is missing its value.
+  Only reason for something to be partial is reducing when a variable is missing its value.
   
   Examples:
   - Typechecking and not inlining
@@ -680,3 +688,33 @@ and synthesize_builtin : tctx -> builtin -> expr * texpr = fun tctx b ->
     let e2' , () = check tctx e2 (TBuiltin TInt) in
     Builtin (BAdd (e1' , e2')) , TBuiltin TInt
   )
+
+let synthesize_statement : tctx -> statement -> tctx * statement =
+  fun tctx stm ->
+  match stm with
+  | SLet (var , expr) -> (
+    let expr' , tv = synthesize tctx expr in
+    let tctx' = tctx_append_var var tv tctx in
+    tctx' , SLet (var , expr')
+  )
+  | SLetType (var , texpr) -> (
+    let tv = teval tctx texpr in
+    let tctx' = tctx_append_tvar var tv tctx in
+    tctx' , SLetType (var , texpr)
+  )
+  | SExpr expr -> (
+    let expr' , _ = synthesize tctx expr in
+    tctx , SExpr (expr')
+  )
+
+let synthesize_statements : tctx -> statement list -> tctx * statement list =
+  fun tctx stms ->
+  let tctx' , rev_statements = stms |> List.fold_left (
+    fun (tctx , stms) stm -> (
+    let (tctx' , stm') = synthesize_statement tctx stm in
+    tctx' , stm' :: stms
+  )) (tctx , []) in
+  tctx' , List.rev rev_statements
+
+module Debug = struct
+end

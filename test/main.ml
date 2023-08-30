@@ -239,6 +239,33 @@ let test_synthesize () =
       raise Fail_synthesis
     )
   in
+  let test_statements name x y =
+    let exception Fail_synthesis in
+    test_basic (O.asprintf "@{<it>synthesize statements@} ; %s" name) @@ fun () ->
+    let tctx , _ = toplevel_synthesize_statements x in
+    (* let y' = toplevel_teval_tctx y in *)
+    if (tctx <> y) then (
+      O.eprintf "@[<v>Different contexts.@;Got [@{<green>%a@}]@;vs@;Expected [@{<red>%a@}]@;@]"
+      AT.pp_tctx tctx AT.pp_tctx y ;
+      raise Fail_synthesis
+    )
+  in
+  let test_statements_full name x y z =
+    let exception Fail_synthesis in
+    test_basic (O.asprintf "@{<it>synthesize statements@} ; %s" name) @@ fun () ->
+    let tctx , x' = toplevel_synthesize_statements x in
+    (* let y' = toplevel_teval_tctx y in *)
+    if (tctx <> y) then (
+      O.eprintf "@[<v>Different contexts.@;Got [@{<green>%a@}]@;vs@;Expected [@{<red>%a@}]@;@]"
+      AT.pp_tctx tctx AT.pp_tctx y ;
+      raise Fail_synthesis
+    ) ;
+    if (x' <> z) then (
+      O.eprintf "@[<v>Different statementss.@;Got [@{<green>%a@}]@;vs@;Expected [@{<red>%a@}]@;@]"
+      AT.pp_statements x' AT.pp_statements z ;
+      raise Fail_synthesis
+    )
+  in
   let test_full name x y z =
     let exception Fail_synthesis in
     test_basic (O.asprintf "@{<it>synthesize-full@} ; %s" name) @@ fun () ->
@@ -549,6 +576,30 @@ let test_synthesize () =
       tcall list tstring ;
     ]) ;
   ) ;
+  test_statements "simple statements" [
+    slet "x" !+%42 ;
+    slet "y" !%"x" ;
+  ] (
+    [
+      "y" , { tvalue = Some tint ; value = None } ;
+      "x" , { tvalue = Some tint ; value = None } ;
+    ] , []
+  ) ;
+  test_statements "statements + types" [
+    stlet "A" @@ ttuple [tint ; tstring] ;
+    slet "x" @@ annot (tuple [!+%42 ; !^%"lol"]) (tvar "A") ;
+  ] ([
+    "x" , { tvalue = Some (ttuple [tint ; tstring]) ; value = None } ;    
+  ] , [
+    "A" , Some (ttuple [tint ; tstring])
+  ]) ;
+  test_statements_full "statements + static eval" [
+    slet "x" @@ eval_full @@ !+%1 +% !+%3 ;
+  ] ([
+    "x" , { tvalue = Some tint ; value = None }
+  ] , []) [
+    slet "x" !+%4 ;  
+  ] ;
   ()
 
 let () =
