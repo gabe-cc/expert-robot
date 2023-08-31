@@ -18,9 +18,18 @@ type expr =
 | FunctionT of var * expr (* T : Type -> body *)
 | CallT of expr * texpr (* expr ty *)
 | LetInT of var * texpr * expr
-(* | Namespace of statements
-| Namespace_access of expr * expr *)
+| Namespace_access of nexpr * string
 [@@deriving show { with_path = false }]
+
+(* namespace expression *)
+and nexpr =
+| NStatements of statements
+| NNamespace_access of nexpr * string
+| NVariable of string
+| NMap of {
+  vars : (string * expr) list ; (* values when full *)
+  nvars : (string * nexpr) list ;
+} (* this is nvalue *)
 
 and builtin =
 | BAdd of expr * expr
@@ -44,8 +53,11 @@ and texpr =
 | TVar of string
 | TFunction of string * texpr (* TFUN var -> body *)
 | TCall of texpr * texpr (* type application *)
-(* | TNamespace of tctx
-| TNamespace_access of texpr * texpr *)
+| TNamespace_access of nexpr * string
+
+and tnexpr =
+| TNNamespace of tctx
+(* | TNVar of string *)
 
 and var = string
 
@@ -57,43 +69,98 @@ and statement =
 and statements = statement list
 
 (* Context is reversed! The list is a stack: the beginning of the list is the _latest_ added value. Same for type context. *)
-and ctx = (string * ctx_member) list
-and ctx_member = {
-  value : expr option ;
-  tvalue : texpr option ;
+(* Eval context *)
+and ctx = {
+  values : (string * expr member) list ;
+  namespaces : (string * nexpr member) list ;
 }
 
-(*
-  (var context * type var context)
-  var context used for type of regular variables
-  type var context used for value of type variables
-*)
-and tctx = ctx * (string * texpr option) list (* `texpr` should be tvalue *)
+and 'a member =
+| Value of 'a
+| Expr of 'a
+| Hole
 
+(*
+  - var context: regular variables
+  - type var context: type variables
+  - namespace var context: namespace variable
+*)
+and tctx = {
+  vars_ty : (string * texpr) list ;
+  tvars_ty : (string * texpr member) list ; (* should bind to tvalues *)
+  nvars_ty : (string * tnexpr) list ;
+}
+
+let ctx values namespaces = { values ; namespaces }
+let ctx_values_map f : ctx -> ctx = fun { values ; namespaces } ->
+  { values = f values ; namespaces }
+let ctx_namespaces_map f : ctx -> ctx = fun { values ; namespaces } ->
+  { values ; namespaces = f namespaces }
 let ctx_append x value : ctx -> ctx =
-  fun ctx -> (x , { value = Some value ; tvalue = None }) :: ctx
-let ctx_append_type x tvalue : ctx -> ctx =
-  fun ctx -> (x , { value = None ; tvalue = Some tvalue }) :: ctx
-let ctx_append_full x value tvalue : ctx -> ctx =
-  fun ctx -> (x , { value = Some value ; tvalue = Some tvalue }) :: ctx
-let tctx_append_var x tval : tctx -> tctx =
-  fun (vars , tvars) -> ctx_append_type x tval vars , tvars
-let tctx_lookup_var x : tctx -> texpr option =
-  fun (vars , _tvars) -> (
-  Option.bind (List.assoc_opt x vars) @@ fun x ->
-  x.tvalue
-)
-let tctx_append_tvar x tval : tctx -> tctx =
-  fun (vars , tvars) -> vars , (x , Some tval) :: tvars
-let tctx_append_tvar_hole x : tctx -> tctx =
-  fun (vars , tvars) -> vars , (x , None) :: tvars
-let tctx_lookup_tvar x : tctx -> texpr option option =
-  fun (_vars , tvars) -> List.assoc_opt x tvars
-let tctx_closure (new_vars : ctx) : tctx -> tctx =
-  fun (_old_vars , _tvars) -> new_vars , []
-let tctx_to_ctx : tctx -> ctx = fst
+  ctx_values_map @@ fun values ->
+  (x , Value value) :: values
+let ctx_append_expr x value : ctx -> ctx =
+  ctx_values_map @@ fun values ->
+  (x , Expr value) :: values
+let ctx_append_hole x : ctx -> ctx =
+  ctx_values_map @@ fun values ->
+  (x , Hole) :: values
+let ctx_append_nvar x value : ctx -> ctx =
+  ctx_namespaces_map @@ fun values ->
+  (x , Value value) :: values
+let ctx_append_nvar_expr x value : ctx -> ctx =
+  ctx_namespaces_map @@ fun values ->
+  (x , Expr value) :: values
+let ctx_lookup x : ctx -> expr member option = fun ctx ->
+  List.assoc_opt x ctx.values
+let ctx_lookup_nvar x : ctx -> nexpr member option = fun ctx ->
+  List.assoc_opt x ctx.namespaces
+let tctx vars_ty tvars_ty nvars_ty = { vars_ty ; nvars_ty ; tvars_ty }
+let tctx_append_var x tval : tctx -> tctx = fun tctx ->
+  { tctx with vars_ty = (x , tval) :: tctx.vars_ty }
+let tctx_lookup_var x : tctx -> texpr option = fun tctx ->
+  List.assoc_opt x tctx.vars_ty 
+let tctx_append_tvar x tval : tctx -> tctx = fun tctx ->
+  { tctx with tvars_ty = (x , Value tval) :: tctx.tvars_ty }
+let tctx_append_tvar_member x mem : tctx -> tctx = fun tctx ->
+  { tctx with tvars_ty = (x , mem) :: tctx.tvars_ty }
+let tctx_append_tvar_expr x tval : tctx -> tctx = fun tctx ->
+  { tctx with tvars_ty = (x , Expr tval) :: tctx.tvars_ty }
+let tctx_append_tvar_hole x : tctx -> tctx = fun tctx ->
+  { tctx with tvars_ty = (x , Hole) :: tctx.tvars_ty }
+let tctx_append_nvar x tnvalue : tctx -> tctx = fun tctx ->
+  { tctx with nvars_ty = (x , tnvalue) :: tctx.nvars_ty }
+let tctx_lookup_tvar x : tctx -> texpr member option =
+  fun tctx -> List.assoc_opt x tctx.tvars_ty
+let tctx_lookup_nvar x : tctx -> tnexpr option =
+  fun tctx -> List.assoc_opt x tctx.nvars_ty
+let tctx_to_ctx : tctx -> ctx = fun { vars_ty ; tvars_ty = _ ; nvars_ty } -> {
+  values = vars_ty |> List.map (fun (var , _) -> var , Hole) ;
+  namespaces = nvars_ty |> List.map (fun (var , _) -> var , Hole) ;
+}
+(* `tctx_diff new old` returns all the most entries from `new`, not present in `old`. Assumes that `new` is made from values added on top of `old`. *)
+let tctx_diff : tctx -> tctx -> tctx = fun tctx' tctx ->
+  let open Std_utils in
+  let l = List.length in
+  let vars_ty =
+    list_take_n (l tctx'.vars_ty - l tctx.vars_ty) tctx'.vars_ty in
+  let tvars_ty =
+    list_take_n (l tctx'.tvars_ty - l tctx.tvars_ty) tctx'.tvars_ty in
+  let nvars_ty =
+    list_take_n (l tctx'.nvars_ty - l tctx.nvars_ty) tctx'.nvars_ty in
+  { vars_ty ; tvars_ty ; nvars_ty }
+
+
+let statements_assoc_opt (x : string) : statements -> expr option =
+  fun statements ->
+  statements |> List.filter_map (function
+    | SLet (var , expr) -> Some (var , expr)
+    | SExpr _ -> None
+    | SLetType _ -> None
+  ) |> List.assoc_opt x
 
 module F = Format
+
 
 (*
   Only reason for something to be partial is reducing when a variable is missing its value.
@@ -111,13 +178,22 @@ module F = Format
 
   TODO: Exclude impossible cases, like `{foo = (* partial *)} + 4`
 *)
-type eval_result =
-| Full of expr (* should be a value *)
-| Partial of expr (* for strong norm purposes *)
+type 'a eval_result =
+| Full of 'a  (* should be a value *)
+| Partial of 'a (* for strong norm purposes *)
+let to_pair = function
+| Full x -> true , x
+| Partial x -> false , x
+let of_pair b x =
+  if b then Full x else Partial x
 let (let*) x f =
   match x with
   | Full x -> Full (f x)
   | Partial x -> Partial (f x)
+let (let*?) x f =
+  match x with
+  | Full x -> Full (f (true , x))
+  | Partial x -> Partial (f (false , x))
 let (let+) x f =
   match x with
   | Full x -> f x
@@ -143,17 +219,18 @@ module TEval_log_steps = Flag()
 module Synthesize_log_steps = Flag()
 
 (* subject reduction should hold *)
-let rec eval : ctx -> expr -> eval_result = fun ctx expr ->
+let rec eval : ctx -> expr -> expr eval_result = fun ctx expr ->
   if !Eval_log_steps.flag then (
     Format.printf "@[<v>Eval step:@;%a@]\n%!" pp_expr expr 
   ) ;
   match expr with
   | Builtin x -> eval_builtin ctx x
   | Variable x -> (
-    match List.assoc_opt x ctx with
-    | Some { value = Some (Rec (_ , body)) ; tvalue = _ } -> eval ctx body
-    | Some { value = Some y ; tvalue = _ } -> full y
-    | Some { value = None ; tvalue = _ } -> partial expr
+    match ctx_lookup x ctx with
+    | Some (Value (Rec (_ , body))) -> eval ctx body
+    | Some (Value y) -> full y
+    | Some (Expr y) -> partial y
+    | Some Hole -> partial expr
     | None -> failwith @@ F.sprintf "when evaluating, variable not found (%s)" x
   )
   | Function (var , _ty , body) -> full @@ Closure (var , body , ctx)
@@ -187,14 +264,15 @@ let rec eval : ctx -> expr -> eval_result = fun ctx expr ->
     Record lst'
   )
   | Field (expr , name) -> (
-    let* value = eval ctx expr in
+    let*? is_full , value = eval ctx expr in
     match value with
     | Record lst -> (
       match List.assoc_opt name lst with
       | Some value' -> value'
       | None -> failwith @@ F.sprintf "when evaluating field, did not find field %s" name
     )
-    | _ -> failwith "when evaluating field, got a non record"
+    | _ when is_full -> failwith "when evaluating field, got a non record"
+    | _ -> value
   )
   | Case (name , expr) -> (
     let* value = eval ctx expr in
@@ -237,6 +315,95 @@ let rec eval : ctx -> expr -> eval_result = fun ctx expr ->
     | Partial expr' -> partial @@ CallT (expr' , texpr)
   )
   | LetInT (_var , _texpr , body) -> eval ctx body
+  | Namespace_access (nexpr , name) -> (
+    let* value = neval ctx nexpr in
+    match value with
+    | NStatements statements -> (
+      match statements_assoc_opt name statements with
+      | Some value -> value
+      | None -> failwith @@ F.asprintf "missing field %s in namespace" name
+    )
+    | _ -> failwith @@ F.asprintf "when evaluating namespace access, got a non-namespace"
+  )
+
+and neval : ctx -> nexpr -> _ = fun ctx nexpr ->
+  match nexpr with
+  | NStatements statements -> (
+    let ctx' = ref ctx in
+    let full = ref true in
+    let statements' =
+      statements |> List.filter_map @@ fun statement ->
+      match statement with
+      | SLet (var , expr) -> (
+        match eval !ctx' expr with
+        | Full value -> (
+          ctx' := ctx_append var value !ctx' ;
+          Some (SLet (var , value))
+        )
+        | Partial expr' -> (
+          full := false ;
+          ctx' := ctx_append_hole var !ctx' ;
+          Some (SLet (var , expr'))
+        )
+      )
+      | SExpr expr -> (
+        match eval !ctx' expr with
+        | Full value -> Some (SExpr value)
+        | Partial expr' -> (
+          full := false ;
+          Some (SExpr expr')
+        )
+      )
+      | SLetType _ -> None
+    in
+    if !full
+    then Full (NStatements statements')
+    else Partial (NStatements statements')
+  )
+  | NVariable nvar -> (
+    match ctx_lookup_nvar nvar ctx with
+    | Some (Value nval) -> full nval
+    | Some (Expr nexpr) -> partial nexpr
+    | Some Hole -> failwith "should never be a namespace hole in context: no namespace function"
+    | None -> failwith @@ F.asprintf "didn't find namespace %s in context" nvar
+  )
+  | NMap { vars ; nvars } -> (
+    let full = ref true in
+    let ctx' = ref ctx in
+    let vars' =
+      vars |> List.map @@ fun (var , expr) ->
+      let is_full , expr' = to_pair @@ eval !ctx' expr in
+      if is_full then (
+        ctx' := ctx_append var expr' !ctx' ;
+      ) else (
+        ctx' := ctx_append_hole var !ctx' ;
+        full := false ;
+      ) ;
+      var , expr'
+    in
+    let nvars' =
+      nvars |> List.map @@ fun (var , nexpr) ->
+      let is_full , nexpr' = to_pair @@ neval !ctx' nexpr in
+      if is_full then (
+        ctx' := ctx_append_nvar var nexpr' !ctx' ;
+      ) else (
+        ctx' := ctx_append_nvar_expr var nexpr' !ctx' ;
+        full := false ;
+      ) ;
+      var , nexpr'
+    in
+    of_pair !full @@ NMap { vars = vars' ; nvars = nvars' }
+  )
+  | NNamespace_access (nexpr , name) -> (
+    let* nvalue = neval ctx nexpr in
+    match nvalue with
+    | NMap { vars = _ ; nvars } -> (
+      match List.assoc_opt name nvars with
+      | Some nvalue' -> nvalue'
+      | None -> failwith @@ F.asprintf "didn't find subnamespace %s in namespace" name
+    )
+    | _ -> failwith "expected nmap on nnamespace access"
+  )
 
 and eval_builtin : ctx -> builtin -> 'a = fun ctx b ->
   match b with
@@ -319,8 +486,32 @@ let rec subtype : tctx -> texpr -> texpr -> bool = fun tctx ty1 ty2 ->
   )
   | TFunction _ , _ | _ , TFunction _ -> false
   | TCall _ , _
-  (* | _ , TCall _ *)
+  | _ , TCall _
     -> failwith "should not try to subtype type applications"
+  (* | TNamespace (vars , tvars) , TNamespace (vars' , tvars') -> (
+    List.(length vars = length vars') && (
+      vars |> List.fold_left (fun acc (var , tvalue) -> (&&) acc @@
+      match List.assoc_opt var vars' with
+      | Some tvalue' -> subtype tctx tvalue tvalue'
+      | None -> false
+      ) true
+    ) && List.(length tvars = length tvars') && (
+      tvars |> List.fold_left (fun acc (tvar , tvalue) -> (&&) acc @@
+      match tvalue , List.assoc_opt tvar tvars' with
+      | _ , None -> false
+      | None , Some None -> true (* both types are abstract in their tnamespace *)
+      | Some _ , Some None -> true (* making a type abstract *)
+      | None , Some (Some _) -> false (* can't specialize abstract type *)
+      | Some tvalue , Some (Some tvalue') -> subtype tctx tvalue tvalue'
+      ) true
+    )
+  )
+  | TNamespace _ , _ | _ , TNamespace _ -> failwith "subtyping namespace with non-namespace" *)
+  | TNamespace_access _ , _
+  (* | _ , TNamespace_access _ *)
+    -> failwith "should not try to subtype namespace access"
+
+
   
 let rec teval : tctx -> texpr -> texpr = fun tctx texp ->
   if !TEval_log_steps.flag then (
@@ -354,8 +545,9 @@ let rec teval : tctx -> texpr -> texpr = fun tctx texp ->
   )
   | TVar var -> (
     match tctx_lookup_tvar var tctx with
-    | Some (Some tv) -> tv
-    | Some None -> TVar var
+    | Some (Value tv) -> tv
+    | Some (Expr _texpr') -> TVar var (* TODO: move to partial *)
+    | Some Hole -> TVar var
     | None -> failwith @@ F.asprintf "missing type variable (%s)" var
   )
   | TFunction (var , body) -> (
@@ -384,9 +576,72 @@ let rec teval : tctx -> texpr -> texpr = fun tctx texp ->
     | _ -> TCall (f' , arg')
     (* | _ -> failwith "type calling a non-typefunction" *)
   )
+  (* | TNamespace (vars , tvars) -> (
+    let tvars' =
+      tvars |> List.map @@ fun (tvar , texpr_opt) ->
+      tvar , texpr_opt |> Option.map @@ fun texpr ->
+      teval tctx texpr
+    in
+    let tctx' =
+      tvars' |> List.fold_left (fun tctx' (tvar , texpr_opt) ->
+        tctx_append_tvar_opt tvar texpr_opt tctx'
+      ) tctx
+    in
+    let vars' =
+      vars |> List.map @@ fun (var , texpr) ->
+      var , teval tctx' texpr
+    in
+    TNamespace (vars' , tvars')
+  ) *)
+  | TNamespace_access (nexpr , name) -> (
+    let _nexpr' , nty = synthesize_namespace tctx nexpr in 
+    match nty with
+    | TNNamespace { tvars_ty ; vars_ty = _ ; nvars_ty = _ } -> (
+      match List.assoc_opt name tvars_ty with
+      | None -> failwith @@ F.asprintf "did not find field %s in namespace" name
+      | Some (Value tvalue) -> tvalue
+      | Some (Expr texpr) -> texpr (* TODO: eval again? return as partial? *)
+      | Some Hole -> TNamespace_access (nexpr , name)
+    )
+    (* | _ -> failwith "expected tnnamespace in tnamespace access" *)
+  )
 
+and tneval : tctx -> tnexpr -> tnexpr = fun tctx tnexpr ->
+  match tnexpr with
+  | TNNamespace { vars_ty ; tvars_ty ; nvars_ty } -> (
+    let tctx' = ref tctx in
+    let nvars_ty' =
+      nvars_ty |> List.map @@ fun (var , tnexpr) -> (
+        let tnvalue = tneval !tctx' tnexpr in
+        tctx' := tctx_append_nvar var tnvalue !tctx' ;
+        var , tnvalue
+      )
+    in
+    let tvars_ty' =
+      tvars_ty |> List.map @@ fun (var , tmember) ->
+      let tmember' =
+        match tmember with
+        | Value tvalue -> Value tvalue
+        | Expr texpr -> Value (teval !tctx' texpr)
+        | Hole -> Hole
+      in
+      tctx' := tctx_append_tvar_member var tmember' !tctx' ;
+      var , tmember
+    in
+    let vars_ty' =
+      vars_ty |> List.map @@ fun (var , texpr) ->
+      let tvalue = teval !tctx' texpr in
+      tctx' := tctx_append_var var tvalue !tctx' ;
+      var , tvalue
+    in
+    TNNamespace { vars_ty = vars_ty' ; tvars_ty = tvars_ty' ; nvars_ty = nvars_ty' }
+  )
+  (* | TNVar tnvar -> (
+    match tctx_lookup_nvar tnvar tctx with
+    |
+  ) *)
 
-let rec check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
+and check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
   match expr , ty with
   | Function (var , texp , body) , TArrow (input , output) -> (
     let var_ty = teval tctx texp in
@@ -461,6 +716,8 @@ let rec check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
   | FunctionT _ , _
   | CallT _ , _
   | LetInT _ , _
+  (* | Namespace _ , _ *)
+  | Namespace_access _ , _
   -> (
     let expr' , inferred_ty = synthesize tctx expr in
     if not (subtype tctx inferred_ty ty) then (
@@ -469,7 +726,7 @@ let rec check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
     ) ;
     expr' , ()
   )
-  | Closure (var , body , ctx) , TArrow (input , output) -> (
+  (* | Closure (var , body , ctx) , TArrow (input , output) -> (
     let ctx' =
       ctx |> List.fold_left (fun acc (var , ctxm) ->
         let expr =
@@ -493,7 +750,8 @@ let rec check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
     let tctx'' = tctx_append_var var input tctx' in
     check tctx'' body output
   )
-  | Closure _ , _ -> failwith "closure need a function type"
+  | Closure _ , _ -> failwith "closure need a function type" *)
+  | Closure _ , _ -> failwith "can't type check closures"
   | Eval (full , expr) , _ -> (
     (*
       With static evaluation, do you typecheck _before_ and _after_ the static evaluation? Or only after?
@@ -680,6 +938,16 @@ and synthesize : tctx -> expr -> expr * texpr = fun tctx expr ->
     let tctx' = tctx_append_tvar var tv tctx in
     synthesize tctx' body
   )
+  | Namespace_access (nexpr , name) -> (
+    let nexpr' , nty = synthesize_namespace tctx nexpr in
+    match nty with
+    | TNNamespace { vars_ty ; tvars_ty = _ ; nvars_ty = _ } -> (
+      match List.assoc_opt name vars_ty with
+      | None -> failwith @@ F.asprintf "missing field %s when typechecking namespace access" name
+      | Some tv -> Namespace_access (nexpr' , name) , tv
+    )
+    (* | _ -> failwith @@ F.asprintf "when typechecking namespace access, got a non namespace" *)
+  )
 
 and synthesize_builtin : tctx -> builtin -> expr * texpr = fun tctx b ->
   match b with
@@ -689,7 +957,48 @@ and synthesize_builtin : tctx -> builtin -> expr * texpr = fun tctx b ->
     Builtin (BAdd (e1' , e2')) , TBuiltin TInt
   )
 
-let synthesize_statement : tctx -> statement -> tctx * statement =
+and synthesize_namespace : tctx -> nexpr -> nexpr * tnexpr = fun tctx nexpr ->
+  match nexpr with
+  | NStatements statements -> (
+    let tctx' , statements' = synthesize_statements tctx statements in
+    let diff = tctx_diff tctx' tctx in
+    NStatements statements' , TNNamespace diff
+  )
+  | NNamespace_access (nexpr , name) -> (
+    let nexpr' , nty = synthesize_namespace tctx nexpr in
+    match nty with
+    | TNNamespace ntctx -> (
+      match tctx_lookup_nvar name ntctx with
+      | None -> failwith @@ F.asprintf "Missing subnamespace %s in namespace" name
+      | Some tnvalue -> NNamespace_access (nexpr' , name) , tnvalue
+    )
+  )
+  | NVariable nvar -> (
+    match tctx_lookup_nvar nvar tctx with
+    | None -> failwith @@ F.asprintf "Namespace %s not found" nvar
+    | Some tnvalue -> NVariable nvar , tnvalue
+  )
+  | NMap { vars ; nvars } -> (
+    let tctx' = ref tctx in
+    let vars' =
+      vars |> List.map @@ fun (var , expr) -> (
+        let expr' , ty = synthesize !tctx' expr in
+        tctx' := tctx_append_var var ty !tctx' ;
+        var , expr'
+      )
+    in
+    let nvars' =
+      nvars |> List.map @@ fun (nvar , nexpr) -> (
+        let nexpr' , nty = synthesize_namespace !tctx' nexpr in
+        tctx' := tctx_append_nvar nvar nty !tctx' ;
+        nvar , nexpr'
+      )
+    in
+    let diff = tctx_diff !tctx' tctx in
+    NMap { vars = vars' ; nvars = nvars' } , TNNamespace diff
+  )
+
+and synthesize_statement : tctx -> statement -> tctx * statement =
   fun tctx stm ->
   match stm with
   | SLet (var , expr) -> (
@@ -707,7 +1016,7 @@ let synthesize_statement : tctx -> statement -> tctx * statement =
     tctx , SExpr (expr')
   )
 
-let synthesize_statements : tctx -> statement list -> tctx * statement list =
+and synthesize_statements : tctx -> statement list -> tctx * statement list =
   fun tctx stms ->
   let tctx' , rev_statements = stms |> List.fold_left (
     fun (tctx , stms) stm -> (

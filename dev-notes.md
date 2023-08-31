@@ -37,22 +37,32 @@ X polymorphism
   X parametric types
 - multi file
   X check statements
-  - namespaces
+  - namespace calculus
   - link context and files
   - build std lib
 - misc
+  - add example of partial evaluation on record access (should work and return the correctfield from the partial record)
+  - add example of typing closure or remove type checking of closure
+  - interweave var/tvar/nvar in ctx+tctx & share vars (split from OCaml, closer to Coq!)
+  - cleanup partial/full | strong/weak evaluation for types
   - tfield (access field from type records)
   - maps for records and variants instead of lists
   - add subtyping between variants
     - add default inference for constructor
   - add subtyping between records
-  - minimal size closures
+  - figure out nominal vs re-occurring types vs module abstraction
+    - think about functions taking an abstract module as parameter
   - test shadowing (in match among other things)
-  - let inline
-  - partial evaluate function args
+  - let static
+    - change tctx for eval case as a result
+  - namespace static
+    - so that you can call a method from a namespace in `let static` or `eval`
   - go through TODOs
-  - closure for mu types (mu within mu)
-  - cleanup partial/full | strong/weak evaluation for types
+  - test mu within mu (might need closure for mu types)
+- advanced
+  - higher order examples
+  - CoC
+  - extraction
 - grammar
 - location
 - error message
@@ -62,6 +72,11 @@ X polymorphism
   - FFI
   - mutually recursive mu types
   - patterns
-  - higher order
-  - CoC
-
+- misc
+  - minimal size closures
+  - fun inline
+    - partial eval??
+    - suspend type checking??
+    - completely lazy type checking?? (only type check when you get the params)
+    - try type checking, and if not working, make lazy??
+  - partial evaluate function args

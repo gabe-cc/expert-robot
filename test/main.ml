@@ -579,25 +579,23 @@ let test_synthesize () =
   test_statements "simple statements" [
     slet "x" !+%42 ;
     slet "y" !%"x" ;
-  ] (
-    [
-      "y" , { tvalue = Some tint ; value = None } ;
-      "x" , { tvalue = Some tint ; value = None } ;
-    ] , []
-  ) ;
+  ] (AT.tctx [
+    "y" , tint ;
+    "x" , tint ;
+  ] [] []) ;
   test_statements "statements + types" [
     stlet "A" @@ ttuple [tint ; tstring] ;
     slet "x" @@ annot (tuple [!+%42 ; !^%"lol"]) (tvar "A") ;
-  ] ([
-    "x" , { tvalue = Some (ttuple [tint ; tstring]) ; value = None } ;    
-  ] , [
-    "A" , Some (ttuple [tint ; tstring])
-  ]) ;
+  ] (AT.tctx [
+    "x" , ttuple [tint ; tstring]
+  ] [
+    "A" , Value (ttuple [tint ; tstring])
+  ] []) ;
   test_statements_full "statements + static eval" [
     slet "x" @@ eval_full @@ !+%1 +% !+%3 ;
-  ] ([
-    "x" , { tvalue = Some tint ; value = None }
-  ] , []) [
+  ] (AT.tctx [
+    "x" , tint ;
+  ] [] []) [
     slet "x" !+%4 ;  
   ] ;
   ()

@@ -1,11 +1,15 @@
 open Types
 
-let toplevel_eval = eval []
-let toplevel_teval = teval ([] , [])
-(* let toplevel_teval_tctx = Debug.teval_tctx ([] , []) *)
-let toplevel_synthesize = synthesize ([] , [])
-let toplevel_synthesize_statements = synthesize_statements ([] , [])
 
+(* Bunch of functions for quick use *)
+let ctx_empty = { values = [] ; namespaces = [] }
+let tctx_empty = { vars_ty = [] ; tvars_ty = [] ; nvars_ty = [] }
+let toplevel_eval = eval ctx_empty
+let toplevel_teval = teval tctx_empty
+let toplevel_synthesize = synthesize tctx_empty
+let toplevel_synthesize_statements = synthesize_statements tctx_empty
+
+(* Bunch of wrapper functions *)
 let let_in var exp body = LetIn (var , exp , body)
 let var x = Variable x
 let (!%) = var
