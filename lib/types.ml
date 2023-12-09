@@ -163,18 +163,21 @@ module F = Format
 
 
 (*
-  Only reason for something to be partial is reducing when a variable is missing its value.
+  Evaluation Results can be partial or full. An evaluation result is said to be...
+  - `full` when the whole expression has been evaluated to a value.
+  - `partial` when at least one part has not been evaluated.
   
-  Examples:
-  - Typechecking and not inlining
-  - Reducing under a lambda
+  For now, the only reason for an expression to only be partially evaluated is when it features a variable that has no value in the evaluation context.
+  
+  Example:
+  - Evaluating in the body of a function. At static time, you can evaluate sub-expressions contained in the body of a function. If these expressions refer to any this function parameters, then you will get a partial result, as those parameters are not bound to any value.
 
-  When something is not fully evaluated, it is hard to know if it is valid or not yet. For instance:
+  When an expression is not fully evaluated, it is hard to know if its evaluation will lead to an error or not yet. For instance:
   - `x + 4` is valid, but you need to see that `x` is a variable.
   - `((fun y -> ...) x) + 4` is valid too, but you need to see that `x` is partial.
   - `{foo = (* .. some partial expression *)} + 4` is not valid, but you need to check that it is a record (even though it is partial) to see that there is no way to recover.
 
-  For now, we are being overly approximative, and do not fail in the case one of the members is partial. As such `{ foo = (* partial *) }` can be added to, or applied to.
+  For now, we are being overly approximative, and do not fail in the case one of the members is partial. As such `{ foo = (* partial *) } + 4` is deemed valid.
 
   TODO: Exclude impossible cases, like `{foo = (* partial *)} + 4`
 *)
@@ -204,15 +207,7 @@ let (let+) x f =
 let full x = Full x
 let partial x = Partial x
 
-module Flag() = struct
-  let flag = ref false
-  let with_flag f =
-    flag := true ;
-    f () ;
-    flag := false
-  let counter = ref 0
-  let counter_inc () = counter := !counter + 1 ; !counter - 1
-end
+module Flag = Std_utils.Flag
 
 module Eval_log_steps = Flag()
 module TEval_log_steps = Flag()
@@ -432,7 +427,7 @@ and eval_builtin : ctx -> builtin -> 'a = fun ctx b ->
 let syntactic_teeq : texpr -> texpr -> bool = fun ty1 ty2 -> ty1 = ty2
 
 (* For now, this is mostly equality, aside from literals *)
-(* This should be only on values. *)
+(* This should be only on tvalues. *)
 let rec subtype : tctx -> texpr -> texpr -> bool = fun tctx ty1 ty2 ->
   match ty1 , ty2 with
   | TType , TType -> true

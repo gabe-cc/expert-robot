@@ -8,3 +8,13 @@ let list_take_n =
   fun n lst ->
   assert (List.length lst >= n) ;
   List.rev @@ aux [] lst n
+
+module Flag() = struct
+  let flag = ref false
+  let with_flag f =
+    flag := true ;
+    f () ;
+    flag := false
+  let counter = ref 0
+  let counter_inc () = counter := !counter + 1 ; !counter - 1
+end

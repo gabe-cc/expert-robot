@@ -1,47 +1,92 @@
-# basic setup
-opam switch create . 5.0.0
+# Basic Setup
+
+```sh
+opam switch create . 5.1.0
+eval $(opam env)
 opam install dune utop ocaml-lsp-server ocamlformat
 opam install ocolor ppx_deriving
-eval $(opam env)
 dune runtest --watch
+```
+
+# Design Choices
+
+## Recursion
+
+Recursion concerns itself with recursive _types_ and recursive _values_.
+Recursive types are types that refer to themselves. For instance: `tree = Leaf of int | Node (list tree)`.
+Recursive values are values that refer to themselves. For instance, the fibonacci function.
+
+There are recursive values with non-recursive types. eg: the fibonacci function.
+There are non-recursive values with recursive types. eg: `Leaf 42` of the above-defined type `tree`.
+
+### Recursive Types
+
+The code implements recursive types through iso-recursion. This means that:
+- Constructing / Building an expression `expr` of a recursive type `t` requires wrapping it with a `fold` (`fold expr`).
+- Destructing / Using an expression `expr` of recursive type `t` requires unwrapping it through `unfold` (`unfold expr`).
+
+This is most common with inductive types (recursive variants). In that case, you will do something like `match unfold (fold (Foo 42)) with`
+
+### Recursive Values
+
+The code implements recursive values through a `rec` constructor.
+
+Consider those two examples:
+```ocaml
+(* Example 1 *)
+let factorial = rec self -> fun x ->
+if x = 0 then 1
+else x * (self (x - 1))
+
+(* Example 2 *)
+let lazy_infinite_list = rec self -> 1 :: (fun () -> self)
+```
+
+Whenever `rec self -> body` is encountered during evaluation, `body` is evaluated with `self` binding to `rec self -> body` in the context.
+
+Then, whenever `rec self -> body` is encountered when fetching a variable from the environment, it is evaluated one more time.
+
 
 # TODO
-X check
-X pp
-X test
-  X eval
-  X synthesize
-  X anti-tests
-X remove forced annotation on constructor
-X rec types with fold/unfold
-  X eval
-  X type checking
-  X tests
-    X types
-    X eval
-X rec values with rec keyword
-  X implem
-  X tests
-    X eval
-    X types
-X static eval
-  X static eval (full or partial) construct
-  X reconstruct term when synthesizing
-  X tests
-X polymorphism
-  X collapse texpr and tvalues
-  X deep polymorphism
-  X remove useless cases in check
-  X let type in
-  X TCall
-  X parametric types
+- [X] check
+- [X] pp
+- [X] test
+  - [X] eval
+  - [X] synthesize
+  - [X] anti-tests
+- [X] remove forced annotation on constructor
+- [X] rec types with fold/unfold
+  - [X] eval
+  - [X] type checking
+  - [X] tests
+    - [X] types
+    - [X] eval
+- [X] rec values with rec keyword
+  - [X] implem
+  - [X] tests
+    - [X] eval
+    - [X] types
+- [X] static eval
+  - [X] static eval (full or partial) construct
+  - [X] reconstruct term when synthesizing
+  - [X] tests
+- [X] polymorphism
+  - [X] collapse texpr and tvalues
+  - [X] deep polymorphism
+  - [X] remove useless cases in check
+  - [X] let type in
+  - [X] TCall
+  - [X] parametric types
 - multi file
-  X check statements
+  - [X] check statements
   - namespace calculus
+    - include
+    - open
+    - visibility??
   - link context and files
   - build std lib
 - misc
-  - add example of partial evaluation on record access (should work and return the correctfield from the partial record)
+  - add example of partial evaluation on record access (should work and return the correct field from the partial record)
   - add example of typing closure or remove type checking of closure
   - interweave var/tvar/nvar in ctx+tctx & share vars (split from OCaml, closer to Coq!)
   - cleanup partial/full | strong/weak evaluation for types
