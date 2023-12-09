@@ -64,6 +64,7 @@ and var = string
 and statement =
 | SLet of var * expr
 | SLetType of var * texpr
+| SLetNamespace of var * nexpr
 | SExpr of expr
 
 and statements = statement list
@@ -155,6 +156,7 @@ let statements_assoc_opt (x : string) : statements -> expr option =
   fun statements ->
   statements |> List.filter_map (function
     | SLet (var , expr) -> Some (var , expr)
+    | SLetNamespace _ -> None
     | SExpr _ -> None
     | SLetType _ -> None
   ) |> List.assoc_opt x
@@ -313,12 +315,12 @@ let rec eval : ctx -> expr -> expr eval_result = fun ctx expr ->
   | Namespace_access (nexpr , name) -> (
     let* value = neval ctx nexpr in
     match value with
-    | NStatements statements -> (
-      match statements_assoc_opt name statements with
+    | NMap { vars ; nvars = _ } -> (
+      match List.assoc_opt name vars with
       | Some value -> value
       | None -> failwith @@ F.asprintf "missing field %s in namespace" name
     )
-    | _ -> failwith @@ F.asprintf "when evaluating namespace access, got a non-namespace"
+    | _ -> failwith @@ F.asprintf "when evaluating namespace access, got a non-namespace value"
   )
 
 and neval : ctx -> nexpr -> _ = fun ctx nexpr ->
@@ -326,6 +328,8 @@ and neval : ctx -> nexpr -> _ = fun ctx nexpr ->
   | NStatements statements -> (
     let ctx' = ref ctx in
     let full = ref true in
+    let vars = ref [] in
+    let nvars = ref [] in
     let statements' =
       statements |> List.filter_map @@ fun statement ->
       match statement with
@@ -333,12 +337,26 @@ and neval : ctx -> nexpr -> _ = fun ctx nexpr ->
         match eval !ctx' expr with
         | Full value -> (
           ctx' := ctx_append var value !ctx' ;
+          vars := (var , value) :: !vars ;
           Some (SLet (var , value))
         )
         | Partial expr' -> (
           full := false ;
           ctx' := ctx_append_hole var !ctx' ;
           Some (SLet (var , expr'))
+        )
+      )
+      | SLetNamespace (var , nexpr) -> (
+        match neval !ctx' nexpr with
+        | Full value -> (
+          ctx' := ctx_append_nvar var value !ctx' ;
+          nvars := (var , value) :: !nvars ;
+          Some (SLetNamespace (var , value))
+        )
+        | Partial nexpr' -> (
+          full := false ;
+          ctx' := ctx_append_hole var !ctx' ;
+          Some (SLetNamespace (var , nexpr'))
         )
       )
       | SExpr expr -> (
@@ -352,7 +370,7 @@ and neval : ctx -> nexpr -> _ = fun ctx nexpr ->
       | SLetType _ -> None
     in
     if !full
-    then Full (NStatements statements')
+    then Full (NMap {vars = !vars ; nvars = !nvars})
     else Partial (NStatements statements')
   )
   | NVariable nvar -> (
@@ -1000,6 +1018,11 @@ and synthesize_statement : tctx -> statement -> tctx * statement =
     let expr' , tv = synthesize tctx expr in
     let tctx' = tctx_append_var var tv tctx in
     tctx' , SLet (var , expr')
+  )
+  | SLetNamespace (var , nexpr) -> (
+    let nexpr' , tv = synthesize_namespace tctx nexpr in
+    let tctx' = tctx_append_nvar var tv tctx in
+    tctx' , SLetNamespace (var , nexpr')
   )
   | SLetType (var , texpr) -> (
     let tv = teval tctx texpr in

@@ -36,6 +36,24 @@ let test_eval () =
       raise Fail_eval
     )
   in
+  let test_namespace name x y =
+    let exception Fail_eval in
+    test_basic (O.asprintf "@{<it>eval@} ; %s" name) @@ fun () ->
+    let x' =
+      match toplevel_neval x with
+      | Full x -> x
+      | Partial x -> (
+        O.eprintf "@[<v>Partial evalaution only.@;[@{<red>%a@}@]"
+          AT.pp_nexpr x ;
+        raise Fail_eval
+      )
+    in
+    if (x' <> y) then (
+      O.eprintf "@[<v>Different values.@;[@{<green>%a@}]@;vs@;[@{<red>%a@}]@;@]"
+      AT.pp_nexpr x' AT.pp_nexpr y ;
+      raise Fail_eval
+    )
+  in
   let test_fail name x =
     let exception No_fail in
     test_basic (O.asprintf "@{<it>eval@} ; %s @{<it>(fail)@}" name) @@ fun () ->
@@ -224,6 +242,26 @@ let test_eval () =
       fc'"cons" (tuple [!^%"lol" ; fc'"nil" unit]) ;
     ]) ;  
   ) ;
+  test_namespace "namespace simple" (nstatements [
+    slet "x" @@ !+%42 +% !+%1 ;
+  ]) (nmap [
+    "x" , !+%43
+  ] []) ;
+  test_namespace "namespace nested" (nstatements [
+    slet_namespace "N" (nstatements [
+      slet "y" @@ !+%3 +% !+%1 ;
+    ]) ;
+    slet "x" @@ !+%1 +% (naccess (nvar "N") "y") ;
+  ]) (nmap [
+    "x" , !+%5
+  ] [
+    "N" , nmap ["y" , !+%4] []
+  ]) ;
+  (* (
+    test "simple namespace" (
+
+    ) !+%42
+  ) ; *)
   ()
 
 let test_synthesize () =
@@ -597,6 +635,43 @@ let test_synthesize () =
     "x" , tint ;
   ] [] []) [
     slet "x" !+%4 ;  
+  ] ;
+  test_statements_full "statements + no eval" [
+    slet "x" @@ !+%1 +% !+%3 ;
+  ] (AT.tctx [
+    "x" , tint ;
+  ] [] []) [
+    slet "x" @@ !+%1 +% !+%3 ;  
+  ] ;
+  test_statements_full "empty namespace" [
+    slet_namespace "N" @@ nstatements [    
+    ] ;
+    slet "x" @@ !+%1 +% !+%3 ;
+  ] (AT.tctx [
+    "x" , tint ;
+  ] [] [
+    "N" , tnnamespace @@ AT.tctx [] [] []
+  ]) [
+    slet_namespace "N" @@ nstatements [
+    ] ;
+    slet "x" @@ !+%1 +% !+%3 ;
+  ] ;
+  test_statements_full "simple namespace" [
+    slet_namespace "N" @@ nstatements [
+      slet "y" @@ !+%1 +% !+%42
+    ] ;
+    slet "x" @@ (naccess (nvar "N") "y") +% !+%3 ;
+  ] (AT.tctx [
+    "x" , tint ;
+  ] [] [
+    "N" , tnnamespace @@ AT.tctx [
+      "y" , tint ;
+    ] [] []
+  ]) [
+    slet_namespace "N" @@ nstatements [
+      slet "y" @@ !+%1 +% !+%42
+    ] ;
+    slet "x" @@ (naccess (nvar "N") "y") +% !+%3 ;
   ] ;
   ()
 

@@ -6,6 +6,7 @@ let ctx_empty = { values = [] ; namespaces = [] }
 let tctx_empty = { vars_ty = [] ; tvars_ty = [] ; nvars_ty = [] }
 let toplevel_eval = eval ctx_empty
 let toplevel_teval = teval tctx_empty
+let toplevel_neval = neval ctx_empty
 let toplevel_synthesize = synthesize tctx_empty
 let toplevel_synthesize_statements = synthesize_statements tctx_empty
 
@@ -64,3 +65,9 @@ let fc name content ty = fold (c' name content) ty
 let fc' name content = fold' (c' name content)
 let slet var expr = SLet (var , expr)
 let stlet var texpr = SLetType (var , texpr)
+let slet_namespace var nexpr = SLetNamespace (var , nexpr)
+let nstatements lst = NStatements lst
+let nmap vars nvars = NMap { vars ; nvars }
+let tnnamespace x = TNNamespace x
+let naccess namespace member = Namespace_access (namespace , member)
+let nvar x = NVariable x

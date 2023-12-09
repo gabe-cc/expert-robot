@@ -79,10 +79,12 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
   - [X] parametric types
 - multi file
   - [X] check statements
-  - namespace calculus
-    - include
-    - open
-    - visibility??
+  - [X] namespace calculus basic
+    - [X] variable
+    - [X] struct
+    - [X] value
+    - [X] type
+    - [X] Test
   - link context and files
   - build std lib
 - misc
@@ -107,6 +109,8 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
 - advanced
   - higher order examples
   - CoC
+  - effects with outside world
+  - top level effects well
   - extraction
 - grammar
 - location
@@ -117,6 +121,15 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
   - FFI
   - mutually recursive mu types
   - patterns
+  - namespace calculus advanced
+    - let namespace in
+    - signature calculus
+      - named signatures
+      - all namespace calculus
+    - functors
+    - include
+    - open
+    - visibility??
 - misc
   - minimal size closures
   - fun inline
@@ -125,3 +138,4 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
     - completely lazy type checking?? (only type check when you get the params)
     - try type checking, and if not working, make lazy??
   - partial evaluate function args
+
