@@ -370,6 +370,12 @@ let test_synthesize () =
     ) @@
     !%"f" @% !+%42
   ) ;
+  test "closure" (
+    let_in "f" (
+      func "x" tint @@ func "y" tint @@ !%"x" +% !%"y"
+    ) @@
+    !%"f" @% !+%42
+  ) (tarrow tint tint) ;
   test "record" (
     record [
       "foo" , !+%42 ;

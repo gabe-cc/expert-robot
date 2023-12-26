@@ -90,7 +90,7 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
     - [X] option
 - misc
   - [X] add example of partial evaluation on record access (should work and return the correct field from the partial record)
-  - add example of typing closure or remove type checking of closure
+  - [X] add example of typing closure or remove type checking of closure
   - interweave var/tvar/nvar in ctx+tctx & share vars (split from OCaml, closer to Coq!)
   - cleanup partial/full | strong/weak evaluation for types
   - tfield (access field from type records)
