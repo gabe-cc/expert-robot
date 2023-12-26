@@ -522,6 +522,11 @@ let test_synthesize () =
     eval_partial @@
     !%"x" +% (!+%7 +% !+%43)
   ) (func "x" tint @@ !%"x" +% !+%50) (tarrow tint tint) ;
+  test_full "static eval partial fun body record" (
+    func "x" tint @@
+    eval_partial @@
+    field (record [ "a" , !+%42 ; "b" , var "x"]) "a"
+  ) (func "x" tint @@ !+%42) (tarrow tint tint) ;
   test_fail "static eval full fun body" (
     func "x" tint @@
     eval_full @@
