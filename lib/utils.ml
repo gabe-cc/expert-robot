@@ -9,6 +9,7 @@ let toplevel_teval = teval tctx_empty
 let toplevel_neval = neval ctx_empty
 let toplevel_synthesize = synthesize tctx_empty
 let toplevel_synthesize_statements = synthesize_statements tctx_empty
+let toplevel_synthesize_namespace = synthesize_namespace tctx_empty
 
 (* Bunch of wrapper functions *)
 let let_in var exp body = LetIn (var , exp , body)
@@ -32,6 +33,7 @@ let tvariant lst = TVariant lst
 let match_ m lst = Match (m , lst)
 let annot expr ty = Annotation (expr , ty)
 let case name content ty = annot (Case (name , content)) ty
+let case_fold name content ty = annot (Fold (Case (name , content))) ty
 let case' name content = Case (name , content)
 let c = case
 let c' = case'

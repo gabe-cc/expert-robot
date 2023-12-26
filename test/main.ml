@@ -277,6 +277,17 @@ let test_synthesize () =
       raise Fail_synthesis
     )
   in
+  let test_namespace name x y =
+    let exception Fail_synthesis in
+    test_basic (O.asprintf "@{<it>synthesize namespace@} ; %s" name) @@ fun () ->
+    let _nexpr , tnexpr = toplevel_synthesize_namespace x in
+    (* let y' = toplevel_teval_tctx y in *)
+    if (tnexpr <> y) then (
+      O.eprintf "@[<v>Different contexts.@;Got [@{<green>%a@}]@;vs@;Expected [@{<red>%a@}]@;@]"
+      AT.pp_tnexpr tnexpr AT.pp_tnexpr y ;
+      raise Fail_synthesis
+    )
+  in
   let test_statements name x y =
     let exception Fail_synthesis in
     test_basic (O.asprintf "@{<it>synthesize statements@} ; %s" name) @@ fun () ->
@@ -673,6 +684,30 @@ let test_synthesize () =
     ] ;
     slet "x" @@ (naccess (nvar "N") "y") +% !+%3 ;
   ] ;
+  let () =
+    let module OList = Agaml.Std_lib.OList in
+    test_namespace "list" (
+      OList.namespace
+    ) (tnnamespace @@ AT.tctx [
+      "nil" , tfunc "T" @@ tarrow tunit @@ OList.ty_body (tvar "T") ;
+      "nil_int" , tarrow tunit (OList.ty_body tint) ;
+    ] [
+      "list" , AT.Value (
+        tfunc "T" @@ OList.ty_body (tvar "T")) ;
+    ] [])
+  in
+  let () =
+    let module OOption = Agaml.Std_lib.OOption in
+    test_namespace "option" (
+      OOption.namespace
+    ) (tnnamespace @@ AT.tctx [
+      "none" , OOption.ty ;
+      "none_int" , OOption.ty_body tint ;
+      "some" , tfunc "T" @@ tarrow (tvar "T") @@ OOption.ty_body (tvar "T") ;
+    ] [
+      "option" , AT.Value OOption.ty ;
+    ] [])
+  in
   ()
 
 let () =

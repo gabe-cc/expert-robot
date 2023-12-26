@@ -77,7 +77,7 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
   - [X] let type in
   - [X] TCall
   - [X] parametric types
-- multi file
+- [X] multi file preparation
   - [X] check statements
   - [X] namespace calculus basic
     - [X] variable
@@ -85,8 +85,9 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
     - [X] value
     - [X] type
     - [X] Test
-  - link context and files
-  - build std lib
+  - [X] build std lib modules
+    - [X] list
+    - [X] option
 - misc
   - add example of partial evaluation on record access (should work and return the correct field from the partial record)
   - add example of typing closure or remove type checking of closure
@@ -101,18 +102,22 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
     - think about functions taking an abstract module as parameter
   - test shadowing (in match among other things)
   - let static
+    - eval content of the let
     - change tctx for eval case as a result
   - namespace static
     - so that you can call a method from a namespace in `let static` or `eval`
   - go through TODOs
   - test mu within mu (might need closure for mu types)
+- CLI
+  - grammar
+  - link context and files
+  - main logic
 - advanced
   - higher order examples
   - CoC
   - effects with outside world
   - top level effects well
   - extraction
-- grammar
 - location
 - error message
 - CLI

@@ -18,3 +18,5 @@ module Flag() = struct
   let counter = ref 0
   let counter_inc () = counter := !counter + 1 ; !counter - 1
 end
+
+module SSet = Set.Make(String)
