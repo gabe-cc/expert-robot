@@ -43,6 +43,8 @@
   - interpret file
 *)
 
+open Agaml_core
+
 module File = struct
   module Name = struct
     include String

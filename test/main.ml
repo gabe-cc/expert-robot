@@ -1,8 +1,20 @@
 module O = Ocolor_format
-module AT = Agaml.Types
-module AU = Agaml.Utils
+module AT = Agaml_core.Types
+module AU = Agaml_core.Utils
 
 (* let fail = ref false *)
+let ftctx vs ts ns : AT.ftctx =
+  let open AT in TForward ((
+    ns |> List.map @@ fun (name , x) ->
+    name , TCNamespace x  
+  ) @ (  
+    ts |> List.map @@ fun (name , x) ->
+    name , TCType x
+  ) @ (
+    vs |> List.map @@ fun (name , x) ->
+    name , TCTerm x
+  ))
+
 
 let test_basic name f =
   (* O.printf "Running %s\n%!" name ; *)
@@ -639,28 +651,28 @@ let test_synthesize () =
   test_statements "simple statements" [
     slet "x" !+%42 ;
     slet "y" !%"x" ;
-  ] (AT.tctx [
-    "y" , tint ;
+  ] (TC.from_forward @@ ftctx [
     "x" , tint ;
+    "y" , tint ;
   ] [] []) ;
   test_statements "statements + types" [
     stlet "A" @@ ttuple [tint ; tstring] ;
     slet "x" @@ annot (tuple [!+%42 ; !^%"lol"]) (tvar "A") ;
-  ] (AT.tctx [
+  ] (TC.from_forward @@ ftctx [
     "x" , ttuple [tint ; tstring]
   ] [
     "A" , Value (ttuple [tint ; tstring])
   ] []) ;
   test_statements_full "statements + static eval" [
     slet "x" @@ eval_full @@ !+%1 +% !+%3 ;
-  ] (AT.tctx [
+  ] (TC.from_forward @@ ftctx [
     "x" , tint ;
   ] [] []) [
     slet "x" !+%4 ;  
   ] ;
   test_statements_full "statements + no eval" [
     slet "x" @@ !+%1 +% !+%3 ;
-  ] (AT.tctx [
+  ] (TC.from_forward @@ ftctx [
     "x" , tint ;
   ] [] []) [
     slet "x" @@ !+%1 +% !+%3 ;  
@@ -669,10 +681,10 @@ let test_synthesize () =
     slet_namespace "N" @@ nstatements [    
     ] ;
     slet "x" @@ !+%1 +% !+%3 ;
-  ] (AT.tctx [
+  ] (TC.from_forward @@ ftctx [
     "x" , tint ;
   ] [] [
-    "N" , tnnamespace @@ AT.tctx [] [] []
+    "N" , tnnamespace @@ ftctx [] [] []
   ]) [
     slet_namespace "N" @@ nstatements [
     ] ;
@@ -683,10 +695,10 @@ let test_synthesize () =
       slet "y" @@ !+%1 +% !+%42
     ] ;
     slet "x" @@ (naccess (nvar "N") "y") +% !+%3 ;
-  ] (AT.tctx [
+  ] (TC.from_forward @@ ftctx [
     "x" , tint ;
   ] [] [
-    "N" , tnnamespace @@ AT.tctx [
+    "N" , tnnamespace @@ ftctx [
       "y" , tint ;
     ] [] []
   ]) [
@@ -699,7 +711,7 @@ let test_synthesize () =
     let module OList = Agaml.Std_lib.OList in
     test_namespace "list" (
       OList.namespace
-    ) (tnnamespace @@ AT.tctx [
+    ) (tnnamespace @@ ftctx [
       "nil" , tfunc "T" @@ tarrow tunit @@ OList.ty_body (tvar "T") ;
       "nil_int" , tarrow tunit (OList.ty_body tint) ;
     ] [
@@ -711,7 +723,7 @@ let test_synthesize () =
     let module OOption = Agaml.Std_lib.OOption in
     test_namespace "option" (
       OOption.namespace
-    ) (tnnamespace @@ AT.tctx [
+    ) (tnnamespace @@ ftctx [
       "none" , OOption.ty ;
       "none_int" , OOption.ty_body tint ;
       "some" , tfunc "T" @@ tarrow (tvar "T") @@ OOption.ty_body (tvar "T") ;

@@ -7,7 +7,7 @@ let list_take_n =
   in
   fun n lst ->
   assert (List.length lst >= n) ;
-  List.rev @@ aux [] lst n
+  aux [] lst n
 
 module Flag() = struct
   let flag = ref false

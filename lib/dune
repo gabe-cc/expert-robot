@@ -2,6 +2,10 @@
  (name agaml)
  (preprocess (pps ppx_deriving.show))
  (libraries
+  ; external
   ocamlgraph
+
+  ; internal
+  agaml_core
  )
 )

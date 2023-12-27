@@ -1,5 +1,5 @@
+open Agaml_core.Utils
 module OList = struct
-  open Utils
 
   let ty_body x =
     tmu "list" @@
@@ -23,7 +23,6 @@ module OList = struct
   ]
 end
 module OOption = struct
-  open Utils
 
   let ty_body x = tvariant [
     "none" , tunit ;

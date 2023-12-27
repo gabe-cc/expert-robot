@@ -1,0 +1,7 @@
+(library
+ (name agaml_interpret)
+ (libraries
+  agaml_ast
+ )
+ (preprocess (pps ppx_deriving.show))
+)

@@ -91,13 +91,37 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
 - misc
   - [X] add example of partial evaluation on record access (should work and return the correct field from the partial record)
   - [X] add example of typing closure or remove type checking of closure
-  - interweave var/tvar/nvar in ctx+tctx & share vars (split from OCaml, closer to Coq!)
-  - cleanup partial/full | strong/weak evaluation for types
-  - tfield (access field from type records)
+  - [X] interweave var/tvar/nvar in ctx+tctx & share vars (split from OCaml, closer to Coq!)
+    - [X] Create new ctx and tctx types
+    - [X] Create context.ml for ctx helpers
+    - [X] Update eval.ml to use those helpers
+    - [X] Create tcontext.ml for tctx helpers
+    - [X] Update bidir.ml to use those helpers
+    - [X] Separate forward contexts from backward contexts
+      - [X] And fix some bugs thanks to that lol
+  - cleanup partial/full & strong/weak evaluation for types
+    - decide on whether all types should be fully evaluated up to a point
+      - likely yes
+    - should types be evaluated under their lambdas??
+    - decide on when static evaluation happens
+      - likely during typechecking
+    - decide on the status of polymorphic expressions and parametric types
+      - find polymorphic expressions / parametric types where there are errors or not _depending on what you reduce them with_
+  - decide on pattern match on types vs type operators
+    - type operators
+      - tfield: access field from type records
+      - targ: access arg from type functions
+    - pattern match on type
+      - reify type type and interpret it
   - maps for records and variants instead of lists
-  - add subtyping between variants
-    - add default inference for constructor
-  - add subtyping between records
+  - standardize test helpers
+  - decide on subtyping for variants and records
+    - likely no
+  - decide on inference for variant constructor
+    - likely generate
+  - decide on row calculus for variants and records
+    - joints of rows are exclusive or inclusive?
+    - row polymorphism is lazy or symbolic?
   - figure out nominal vs re-occurring types vs module abstraction
     - think about functions taking an abstract module as parameter
   - test shadowing (in match among other things)
@@ -108,6 +132,9 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
     - so that you can call a method from a namespace in `let static` or `eval`
   - go through TODOs
   - test mu within mu (might need closure for mu types)
+  - investigate whether `tctx.TCTerm` should contain an `expr member`
+    - ie: should the type checker have a view of the values of the vars or not?
+    - looks like it should, and only my lazyness made it so that it did not
 - CLI
   - grammar
   - link context and files
