@@ -100,13 +100,41 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
     - [X] Separate forward contexts from backward contexts
       - [X] And fix some bugs thanks to that lol
   - cleanup partial/full & strong/weak evaluation for types
+    - add more examples
+      - [X] id with diff name
+        - [X] test equality specifically
+        - [X] extend equality for alpha-equivalence
+          - [X] don't perform alpha renamings (n^2 time and space)
+          - [X] maintain mapping
+          - [X] debug existing code
+      - [X] id with higher order as param
+      - [X] id applied to itself
+      - (finished when cleanup is finished)
     - decide on whether all types should be fully evaluated up to a point
-      - likely yes
+      - yes.
+      - if not, how can you pattern match on types?
     - should types be evaluated under their lambdas??
+      - yes. at least some.
+      - else, how to compare `fun a -> list a` with itself?
+      - but not _full_ normalization, because of recursive types
     - decide on when static evaluation happens
-      - likely during typechecking
+      - during typechecking.
     - decide on the status of polymorphic expressions and parametric types
       - find polymorphic expressions / parametric types where there are errors or not _depending on what you reduce them with_
+      - semi-equality
+        - "for sure yes"
+        - "for sure no"
+        - "unsure"
+        - no reduction should be performed _within_ the equality relationship
+        - converges on full equality on ground terms
+        - alpha-equivalent syntactic equality
+      - outside of equality, all reductions should be performed eagerly, through partial evaluations
+      - partial parameters / functions
+        - all types are eagerly partially evaluated
+        - params can be flagged as "partially evaluatable" (will be partially evaluated whenever instantiated)
+      - transparent parameters / functions
+        - non-full-equality when going through them should be an error
+      - examples for all of them
   - decide on pattern match on types vs type operators
     - type operators
       - tfield: access field from type records
@@ -118,12 +146,13 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
   - decide on subtyping for variants and records
     - likely no
   - decide on inference for variant constructor
-    - likely generate
+    - likely generate on type definition
   - decide on row calculus for variants and records
     - joints of rows are exclusive or inclusive?
     - row polymorphism is lazy or symbolic?
   - figure out nominal vs re-occurring types vs module abstraction
     - think about functions taking an abstract module as parameter
+  - params can be flagged as "must be partially evaluated" (can't be passed around as dynamic closures)
   - test shadowing (in match among other things)
   - let static
     - eval content of the let

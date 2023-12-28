@@ -1,3 +1,6 @@
 (library
  (name agaml_tools)
- (libraries ))
+ (libraries
+  ocolor
+ )
+)

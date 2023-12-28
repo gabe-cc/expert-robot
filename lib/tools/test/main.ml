@@ -1,19 +1,6 @@
 module O = Ocolor_format
 module T = Agaml_tools
-
-let test_basic name f =
-  (try (
-    f () ;
-    O.printf "@{<green>Pass@} [@{<it>%s@}]\n" name
-  ) with e -> (
-    O.eprintf "@{<red;bold>Failure@} [@{<it>%s@}]\nException:\n@{<orange>%s@}\n\n"
-      name (Printexc.to_string e)
-  ))
-
-let print_diff_values pp output expected =
-    O.eprintf "@[<v>Different contexts.@;Got [@{<red>%a@}]@;vs@;Expected [@{<green>%a@}]@;@]"
-    pp output pp expected
-
+open T.Test
 
 let test_list_take_n () =
   let pp_ints = O.pp_list_generic ~left:"[" ~right:"]" ~sep:" ; " Format.pp_print_int in
@@ -22,9 +9,9 @@ let test_list_take_n () =
       O.asprintf "list_take_n ; %s" name
     ) @@ fun () ->
     let exception Diff_values in
-    let output = T.list_take_n input_n input_lst in
-    if output <> expected then (
-      print_diff_values pp_ints output expected ;
+    let got = T.list_take_n input_n input_lst in
+    if got <> expected then (
+      print_not_expected pp_ints ~got ~expected ;
       raise Diff_values
     )
   in
@@ -32,6 +19,32 @@ let test_list_take_n () =
   test "123" (2 , [1;2;3]) [1;2] ;
   ()
 
+let test_dassoc () =
+  (* use the raw version to access the internals *)
+  let open T.DAssocRaw in
+  let test name got expected =
+    test_basic (
+      O.asprintf "dassoc ; %s" name
+    ) @@ fun () ->
+    let exception Diff_values in
+    if got <> expected then (
+      raise Diff_values
+    )
+  in
+  test "empty" empty (Forward , []) ;
+  test "simple forward assoc none"
+    (assoc_opt 42 (Forward , [23 , 42])) None ;
+  test "simple forward assoc some"
+    (assoc_opt 23 (Forward , [23 , 42 ; 23 , 12])) (Some 42) ;
+  test "simple backward assoc none"
+    (assoc_opt 23 (Backward , [23 , 42])) None ;
+  test "simple backward assoc some"
+    (assoc_opt 23 (Backward , [42 , 23 ; 12 , 23])) (Some 42) ;
+  test "swap"
+    (swap (Forward , [23 , 42 ; 23 , 12])) (Backward , [23 , 42 ; 23 , 12]) ;
+  ()
+
 let () =
   test_list_take_n () ;
+  test_dassoc () ;
   ()

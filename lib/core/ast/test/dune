@@ -1,0 +1,7 @@
+(test
+ (name main)
+ (libraries
+  agaml_ast
+  agaml_tools
+ )
+)

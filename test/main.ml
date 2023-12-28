@@ -2,7 +2,6 @@ module O = Ocolor_format
 module AT = Agaml_core.Types
 module AU = Agaml_core.Utils
 
-(* let fail = ref false *)
 let ftctx vs ts ns : AT.ftctx =
   let open AT in TForward ((
     ns |> List.map @@ fun (name , x) ->
@@ -283,8 +282,8 @@ let test_synthesize () =
     test_basic (O.asprintf "@{<it>synthesize@} ; %s" name) @@ fun () ->
     let _ , synth = toplevel_synthesize x in
     let y' = toplevel_teval y in
-    if (synth <> y') then (
-      O.eprintf "@[<v>Different types.@;[@{<green>%a@}]@;vs@;[@{<red>%a@}]@;@]"
+    if (not @@ Agaml_ast.Equality.subtype synth y') then (
+      O.eprintf "@[<v>Not subtype.@;Synthesized:[@{<green>%a@}]@;vs@;Expected:[@{<red>%a@}]@;@]"
       AT.pp_texpr synth AT.pp_texpr y ;
       raise Fail_synthesis
     )
@@ -647,6 +646,55 @@ let test_synthesize () =
       tcall list tint ;
       tcall list tstring ;
     ]) ;
+  ) ;
+  test "apply id to 2 params" (
+    let_in "id" (
+      funct "T" @@
+      func "x" (tvar "T") (var "x")
+    ) @@
+    tuple [
+      call (callt (var "id") tint) !+%42 ;
+      call (callt (var "id") (ttuple [tint ; tint]))
+        (tuple [!+%23 ; !+%0])
+    ]
+  ) (ttuple [
+    tint ;
+    ttuple [tint ; tint] ;
+  ]);
+  test "id diff name" (
+    funct "T" @@
+    func "x" (tvar "T") (var "x")
+  ) (
+    (tfunc "U" @@ tarrow (tvar "U") (tvar "U") )
+  ) ;  
+  test "apply higher order to id" (
+    let_in "id" (
+      funct "T" @@
+      func "x" (tvar "T") (var "x")
+    ) @@
+    let_in "double_apply" (
+      funct "T" @@
+      func "f" (tarrow (tvar "T") (tvar "T")) @@
+      func "x" (tvar "T") @@
+      !%"f" @% !%"f" @% !%"x"
+    ) @@
+    ((callt (var "double_apply") tint) @% (callt (var "id") tint)) @% !+%42
+  ) (
+    tint
+  ) ;
+  test "id self-apply" (
+    let_in "id" (
+      funct "T" @@
+      func "x" (tvar "T") (var "x")    
+    ) @@
+    let_in "self_apply" (
+      (callt !%"id" (
+        (tfunc "U" @@ tarrow (tvar "U") (tvar "U"))
+      )) @% !%"id"
+    ) @@
+    !%"self_apply" ;
+  ) (
+    (tfunc "U" @@ tarrow (tvar "U") (tvar "U"))
   ) ;
   test_statements "simple statements" [
     slet "x" !+%42 ;

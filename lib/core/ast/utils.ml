@@ -1,8 +1,5 @@
 open Types
 
-module Context = Context
-
-
 (* Bunch of wrapper functions *)
 let let_in var exp body = LetIn (var , exp , body)
 let var x = Variable x
