@@ -9,41 +9,66 @@ module Synthesize_log_steps = Flag()
 
 open Eval
   
-let rec teval : tctx -> texpr -> texpr = fun tctx texp ->
+let rec teval : tctx -> texpr -> texpr eval_result = fun tctx texpr ->
   if !TEval_log_steps.flag then (
-    Format.printf "@[<v>TEval step:@;%a@]\n%!" pp_texpr texp 
+    Format.printf "@[<v>TEval step:@;%a@]\n%!" pp_texpr texpr 
   ) ;
-  match texp with
-  | TType -> TType
+  match texpr with
+  | TType -> full TType
   | TArrow (input , output) -> (
-    let input' = teval tctx input in
-    let output' = teval tctx output in
-    TArrow (input' , output')
+    let+ input' = teval tctx input in
+    let+ output' = teval tctx output in
+    full @@ TArrow (input' , output')
   )
-  | TLiteral lit -> TLiteral lit
-  | TBuiltin b -> TBuiltin b
+  | TLiteral lit -> full @@ TLiteral lit
+  | TBuiltin b -> full @@ TBuiltin b
   | TRecord lst -> (
+    let is_full = ref true in
     let lst' = lst |> List.map (fun (name , content) -> 
-      name , teval tctx content    
+      name ,
+      match teval tctx content with
+      | Partial x -> (
+        is_full := false ;
+        x
+      )
+      | Full x -> x
     ) in
+    (if !is_full then full else partial) @@
     TRecord lst'
   )
   | TVariant lst -> (
+    let is_full = ref true in
     let lst' = lst |> List.map (fun (name , content) -> 
-      name , teval tctx content    
+      name ,
+      match teval tctx content with
+      | Partial x -> (
+        is_full := false ;
+        x
+      )
+      | Full x -> x
     ) in
+    (if !is_full then full else partial) @@
     TVariant lst'
   )
+  (*
+    Dealing with TMu is problematic.
+    Can never fully evaluate, because it is self-referential.
+    Instead, put a Hole in the variable, reduce as much as you can below, and define this to be the semantics of `TMu`.
+    Foldings and unfoldings only happen with the dedicated constructors.
+  *)
   | TMu (var , body) -> (
     let tctx' = TC.append_thole var tctx in
-    let body' = teval tctx' body in
-    TMu (var , body')
+    let body' =
+      match teval tctx' body with
+      | Full x | Partial x -> x
+    in
+    full @@ TMu (var , body')
   )
   | TVar var -> (
     match TC.lookup_t var tctx with
-    | Some (Value tv) -> tv
-    | Some (Expr _texpr') -> TVar var (* TODO: move to partial *)
-    | Some Hole -> TVar var
+    | Some (Value tv) -> full tv
+    | Some (Expr texpr') -> partial texpr'
+    | Some Hole -> partial texpr
     | None -> failwith @@ F.asprintf "missing type variable (%s)" var
   )
   | TFunction (var , body) -> (
@@ -52,65 +77,53 @@ let rec teval : tctx -> texpr -> texpr = fun tctx texp ->
       TODO: check if should reduce under the lambda or not
     *)
     let tctx' = TC.append_thole var tctx in
-    let body' = teval tctx' body in
-    TFunction (var , body')
+    let body' =
+      match teval tctx' body with
+      | Full x | Partial x -> x
+    in
+    full @@ TFunction (var , body')
   ) 
   | TCall (f , arg) -> (
-    let f' = teval tctx f in
-    let arg' = teval tctx arg in
-    (*
-      What kind of evaluation is 'teval' performing?
-      Strong evaluation (under the lambdas)?
-      If so, then we should accept calls to non-tfunctions, as we might get non-reduced variables there.
-      Better would be to split full evals from only partial evals, same as `eval`.
-    *)
+    let+ f' = teval tctx f in
+    let+ arg' = teval tctx arg in
     match f' with
     | TFunction (var , body) -> (
       let tctx' = TC.append_t var arg' tctx in
       teval tctx' body
     )
-    | _ -> TCall (f' , arg')
+    (* TODO: should this be partial only on variables, or also on other cases? *)
+    | _ -> partial @@ TCall (f' , arg')
     (* | _ -> failwith "type calling a non-typefunction" *)
   )
-  (* | TNamespace (vars , tvars) -> (
-    let tvars' =
-      tvars |> List.map @@ fun (tvar , texpr_opt) ->
-      tvar , texpr_opt |> Option.map @@ fun texpr ->
-      teval tctx texpr
-    in
-    let tctx' =
-      tvars' |> List.fold_left (fun tctx' (tvar , texpr_opt) ->
-        TC.append_topt tvar texpr_opt tctx'
-      ) tctx
-    in
-    let vars' =
-      vars |> List.map @@ fun (var , texpr) ->
-      var , teval tctx' texpr
-    in
-    TNamespace (vars' , tvars')
-  ) *)
   | TNamespace_access (nexpr , name) -> (
     let _nexpr' , nty = synthesize_namespace tctx nexpr in 
     match nty with
     | TNNamespace ftctx -> (
       match TC.lookup_t name @@ TC.from_forward ftctx with
       | None -> failwith @@ F.asprintf "did not find field %s in namespace" name
-      | Some (Value tvalue) -> tvalue
-      | Some (Expr texpr) -> texpr (* TODO: eval again? return as partial? *)
-      | Some Hole -> TNamespace_access (nexpr , name)
+      | Some (Value tvalue) -> full tvalue
+      | Some (Expr texpr') -> partial texpr'
+      | Some Hole -> partial texpr
     )
-    (* | _ -> failwith "expected tnnamespace in tnamespace access" *)
   )
 
-and tneval : tctx -> tnexpr -> tnexpr = fun tctx tnexpr ->
+and tneval : tctx -> tnexpr -> tnexpr eval_result = fun tctx tnexpr ->
   match tnexpr with
   | TNNamespace (TForward tctx_n) -> (
     let tctx2 : tctx ref = ref tctx in
+    let is_full = ref true in
     let tctx_n2 = tctx_n |> List.map (fun (name , binding) ->
       name ,
       match binding with
       | TCTerm texpr -> (
-        let tvalue = teval !tctx2 texpr in
+        let tvalue =
+          match teval !tctx2 texpr with
+          | Full x -> x
+          | Partial x -> (
+            is_full := false ;
+            x
+          )
+        in
         tctx2 := TC.append name tvalue !tctx2 ;
         TCTerm tvalue
       )
@@ -118,28 +131,48 @@ and tneval : tctx -> tnexpr -> tnexpr = fun tctx tnexpr ->
         let tm' =
           match tm with
           | Value tvalue -> Value tvalue
-          | Expr texpr -> Value (teval !tctx2 texpr)
-          | Hole -> Hole
+          | Expr texpr -> (
+            match teval !tctx2 texpr with
+            | Full tv -> Value tv
+            | Partial texpr -> (
+              is_full := false ;
+              Expr texpr
+            )
+          )
+          | Hole -> (
+            is_full := false ;
+            Hole
+          )
         in
         tctx2 := TC.append_traw name tm' !tctx2 ;
         TCType tm'
       )
       | TCNamespace tnexpr -> (
-        let tnvalue = tneval !tctx2 tnexpr in
+        let tnvalue =
+          match tneval !tctx2 tnexpr with
+          | Full x -> x
+          | Partial x -> (
+            is_full := false ;
+            x
+          )
+        in
         tctx2 := TC.append_n name tnvalue !tctx2 ;
         TCNamespace tnvalue
       )
     ) in
-    TNNamespace (TForward tctx_n2)
+
+    (if !is_full then full else partial) @@ TNNamespace (TForward tctx_n2)
   )
 
 and check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
   match expr , ty with
   | Function (var , texp , body) , TArrow (input , output) -> (
-    let var_ty = teval tctx texp in
+    let var_ty =
+      match teval tctx texp with
+      | Partial x | Full x -> x
+    in
     assert (Eq.subtype var_ty input) ;
-    let tv = teval tctx texp in
-    let tctx' = TC.append var tv tctx in
+    let tctx' = TC.append var var_ty tctx in
     let body' , () = check tctx' body output in
     Function (var , texp , body') , () (* TODO: texp -> tv *)
   )
@@ -186,7 +219,10 @@ and check : tctx -> expr -> texpr -> expr * unit = fun tctx expr ty ->
   )
   | Fold expr , TMu (var , body) -> (
     let tctx' = TC.append_t var ty tctx in
-    let body_ty = teval tctx' body in
+    let body_ty =
+      match teval tctx' body with
+      | Partial x | Full x -> x
+    in
     let expr' , () = check tctx' expr body_ty in
     Fold expr' , ()
   )
@@ -289,7 +325,10 @@ and synthesize : tctx -> expr -> expr * texpr = fun tctx expr ->
     | None -> failwith @@ F.sprintf "when type checking, variable not found (%s)" var
   )
   | Function (var , texp , body) -> (
-    let tv = teval tctx texp in
+    let tv =
+      match teval tctx texp with
+      | Full x | Partial x -> x
+    in
     let tctx' = TC.append var tv tctx in
     let body' , body_ty = synthesize tctx' body in
     Function (var , texp , body') , TArrow (tv , body_ty) (* TODO: texp -> tv *)
@@ -310,7 +349,10 @@ and synthesize : tctx -> expr -> expr * texpr = fun tctx expr ->
     | _ -> failwith @@ F.sprintf "when type checking application, left part did not have function type"
   )
   | Annotation (expr , ty) -> (
-    let ty' = teval tctx ty in
+    let ty' =
+      match teval tctx ty with
+      | Partial x | Full x -> x
+    in
     let expr' , () = check tctx expr ty' in
     Annotation (expr' , ty) , ty'
   )
@@ -385,7 +427,11 @@ and synthesize : tctx -> expr -> expr * texpr = fun tctx expr ->
     match body_ty with
     | TMu (var , tbody) -> (
       let tctx' = TC.append_t var body_ty tctx in
-      let tbody' = teval tctx' tbody in
+      let tbody' =
+        match teval tctx' tbody with
+        | Full x -> x
+        | Partial _ -> failwith "unfolding mu should be full"
+      in
       Unfold body' , tbody'
     )
     | _ -> failwith "unfolding a non-mu type"
@@ -413,17 +459,26 @@ and synthesize : tctx -> expr -> expr * texpr = fun tctx expr ->
   )
   | CallT (f , arg) -> (
     let f' , f_ty = synthesize tctx f in
-    let arg' = teval tctx arg in
+    let arg' =
+      match teval tctx arg with
+      | Partial x | Full x -> x
+    in
     match f_ty with
     | TFunction (var , body) -> (
       let tctx' = TC.append_t var arg' tctx in
-      let body' = teval tctx' body in
+      let body' =
+        match teval tctx' body with
+        | Partial x | Full x -> x
+      in
       CallT (f' , arg) , body'
     )
     | _ -> failwith "callt on non-tfunction type"
   )
   | LetInT (var , texpr , body) -> (
-    let tv = teval tctx texpr in
+    let tv =
+      match teval tctx texpr with
+      | Partial x | Full x -> x
+    in
     (* if !Synthesize_log_steps.flag then
       Format.printf "@[<v>Let In:@;%a@;@]"
       pp_texpr tv ; *)
@@ -504,7 +559,10 @@ and synthesize_statement : tctx -> statement -> tctx * statement =
     tctx' , SLetNamespace (var , nexpr')
   )
   | SLetType (var , texpr) -> (
-    let tv = teval tctx texpr in
+    let tv =
+      match teval tctx texpr with
+      | Partial x | Full x -> x
+    in
     let tctx' = TC.append_t var tv tctx in
     tctx' , SLetType (var , texpr)
   )

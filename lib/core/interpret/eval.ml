@@ -7,7 +7,7 @@ module U = Agaml_ast.Utils
   - `full` when the whole expression has been evaluated to a value.
   - `partial` when at least one part has not been evaluated.
   
-  For now, the only reason for an expression to only be partially evaluated is when it features a variable that has no value in the evaluation C.
+  For now, the only reason for an expression to only be partially evaluated is when it features a variable that has no value in the evaluation context.
   
   Example:
   - Evaluating in the body of a function. At static time, you can evaluate sub-expressions contained in the body of a function. If these expressions refer to any this function parameters, then you will get a partial result, as those parameters are not bound to any value.
@@ -79,6 +79,10 @@ let rec eval : ctx -> expr -> expr eval_result = fun ctx expr ->
       let ctx'' = C.append v arg' ctx' in
       eval ctx'' body
     )
+    (*
+      TODO: should not be a partial??
+      or at least on variables, but a bit too ad-hoc
+    *)
     | _ -> failwith "when evaluating call, got a non functional value"
   )
   | Annotation (expr , _) -> eval ctx expr
@@ -158,7 +162,7 @@ let rec eval : ctx -> expr -> expr eval_result = fun ctx expr ->
     | _ -> failwith @@ F.asprintf "when evaluating namespace access, got a non-namespace value"
   )
 
-and neval : ctx -> nexpr -> _ = fun ctx nexpr ->
+and neval : ctx -> nexpr -> nexpr eval_result = fun ctx nexpr ->
   match nexpr with
   | NStatements statements -> (
     let ctx' = ref ctx in

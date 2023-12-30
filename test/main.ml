@@ -281,7 +281,11 @@ let test_synthesize () =
     let exception Fail_synthesis in
     test_basic (O.asprintf "@{<it>synthesize@} ; %s" name) @@ fun () ->
     let _ , synth = toplevel_synthesize x in
-    let y' = toplevel_teval y in
+    let y' =
+      match toplevel_teval y with
+      | Full x -> x
+      | Partial _ -> failwith @@ Format.asprintf "in test synthesize %s, toplevel teval should be full" name
+    in
     if (not @@ Agaml_ast.Equality.subtype synth y') then (
       O.eprintf "@[<v>Not subtype.@;Synthesized:[@{<green>%a@}]@;vs@;Expected:[@{<red>%a@}]@;@]"
       AT.pp_texpr synth AT.pp_texpr y ;
@@ -335,7 +339,11 @@ let test_synthesize () =
       AT.pp_expr x' AT.pp_expr y ;
       raise Fail_synthesis    
     ) ;
-    let z' = toplevel_teval z in
+    let z' =
+      match toplevel_teval z with
+      | Full x -> x
+      | Partial _ -> failwith @@ Format.asprintf "in test synthesize full %s, toplevel teval should be full" name
+      in
     if (synth <> z') then (
       O.eprintf "@[<v>Different types.@;[@{<green>%a@}]@;vs@;[@{<red>%a@}]@;@]"
       AT.pp_texpr synth AT.pp_texpr z ;

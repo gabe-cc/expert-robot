@@ -109,14 +109,101 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
           - [X] debug existing code
       - [X] id with higher order as param
       - [X] id applied to itself
+      - [X] test synthesize should return fully evaluated types
       - (finished when cleanup is finished)
-    - decide on whether all types should be fully evaluated up to a point
-      - yes.
-      - if not, how can you pattern match on types?
-    - should types be evaluated under their lambdas??
+    - [X] decide on whether all types should be fully evaluated up to a point
+      - [X] ~~yes.~~ nope.
+        - within polymorphic functions, nothing that depends on the type parameter is fully evaluated
+        - if not, how can you pattern match on types?
+          - you go _as far as possible_
+          - if you depend on a parametric/polymorphic type variable, you don't unfold the match until you get access to the parameter
+      - [X] `teval` should return `Full` or `Partial`
+      - [X] how to discriminate between strong and weak reductions? should there be any discrimination?
+        - strong: reduce under parametric/polymorphic
+        - partial: reduce whenever an arg is passed, doesn't wait for all the args
+        - right now, all type reductions are strong & partial
+        - `fun static` should be for strong & partial _value_ reductions
+        - and possibly a keyword for full type reductions, or weak type reductions??
+    - in the future, what if arbitrary functions at type level (type-level calculus or CoC)?
+      - [X] imagine infinite loop, how to debug?
+        - [X] first, how do you debug infinite loops at runtime?
+          - printfs.
+            - so need printfs at static-time!
+          - timers?
+            - eee. but agreed, need timers at static-time.
+          - state.
+            - agreed that need state at static-time.
+          - debugger.
+            - yup, need type level debugger, which is easy in our case.
+        - [X] timeout on type level evaluations?
+          - complicated. how to make it principled?
+          - consider:
+            - i build library just below the time out limit
+            - anyone that uses it goes over the limit
+          - looks bad. no for now.
+        - [X] type-level debugger?
+          - yes, ideally, debugger for type interpreter, interpreter *and* compiled code
+          - most realistically, just for the type interpreter and interpreter at first
+        - [X] sub-class that is linear time by construction and warning outside of it?
+          - how do you enforce it on non-type things?
+            - define complexity checker
+            - b a  s   ed
+            - but more realistically: no, not a good solution
+      - [X] how do you interweave static and type?
+        - two typical approaches
+          - 1. separate ASTs, and instead complex literal&unliteral / quote&unquote
+            - Staged Metaprogramming tradition.
+          - 2. mix value AST and type AST: merge func, funct and tfunc
+            - CoC tradition.
+        - I feel closer to 1.
+          - 2 with Type:Type can be strange, who knows
+          - 2 almost certainly need a kind checker, but that might be trivial with Type:Type
+          - 1 needs fewest changes to current codebase lol
+          - 1 is closest to actual metaprogramming, which is what we are actually doing: metaprogramming through partial evaluation and type-level evaluation
+      - [X] kind checking or not?
+        - no. kind checking is hell.
+          - or at least, i haven't dug enough to make it non-hell.
+        - means that type level calculus is somehow dynamic.
+          - yes!
+      - type erasure?
+        - yes!
+          - compilation is important
+        - how do you do type erasure for things that depend on _internally_ or through some function application on types?
+          - make sure that the applications are complete
+        - doesn't type erasure imply kind checking?
+          - ie: notice which sub-terms depend on types or not
+          - nope, you can use an over-approximation.
+      - [X] over-approximator for type erasure
+        - tag all functions as static / dynamic
+        - all parameters until type parameters **must** be static
+        - all functions with **static** parameters must be fully evaluated...
+          - in `main`
+          - but not enough. need a notion of static vs dynamic exports:
+            - want to be able to exports types and some static non-fully evaluated functions 
+            - want to be able to exports non-main type-erased values
+          - `static export` vs `dyn export`
+      - [X] in the future, boxed values
+        - OCaml can compile polymorphic functions
+        - this is done through _boxed_ values
+        - OCaml ensures that function bodies _can not_ depend on non-instantiated types, and always interact through non-instantiated values through boxed OCaml-provided functions
+          - equality provided by OCaml
+          - reference/dereference provided by OCaml
+        - no solution for now to replicate this, but there _should_ be an approximator
+          - look at objects, basically. this is what they do.
+          - or rather, closer to Rust traits, that have specific layout requirements
+    - [X] think: how do you interweave type checking and other things?
+      - static analyses
+        - after type checking a unit
+        - need to store results of type checking unit, and then post processing them
+        - need to store results of static analyses, in separate locations, that still map back to AST
+      - type directed transformations
+        - ad-hoc at first, like deep pattern matching
+        - then possibly an engine?
+    - [X] should types be evaluated under their lambdas??
       - yes. at least some.
       - else, how to compare `fun a -> list a` with itself?
       - but not _full_ normalization, because of recursive types
+        - this is already solved with fold/unfold, no new complexity here
     - decide on when static evaluation happens
       - during typechecking.
     - decide on the status of polymorphic expressions and parametric types
@@ -128,19 +215,22 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
         - no reduction should be performed _within_ the equality relationship
         - converges on full equality on ground terms
         - alpha-equivalent syntactic equality
-      - outside of equality, all reductions should be performed eagerly, through partial evaluations
+      - outside of equality, all reductions should be performed eagerly, through type-level partial evaluations
       - partial parameters / functions
         - all types are eagerly partially evaluated
         - params can be flagged as "partially evaluatable" (will be partially evaluated whenever instantiated)
       - transparent parameters / functions
         - non-full-equality when going through them should be an error
       - examples for all of them
+    - move design decisions to written text
   - decide on pattern match on types vs type operators
     - type operators
       - tfield: access field from type records
       - targ: access arg from type functions
     - pattern match on type
       - reify type type and interpret it
+  - tliteral for expressions
+    - quotes???
   - maps for records and variants instead of lists
   - standardize test helpers
   - decide on subtyping for variants and records
