@@ -124,7 +124,7 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
         - right now, all type reductions are strong & partial
         - `fun static` should be for strong & partial _value_ reductions
         - and possibly a keyword for full type reductions, or weak type reductions??
-    - in the future, what if arbitrary functions at type level (type-level calculus or CoC)?
+    - [X] in the future, what if arbitrary functions at type level (type-level calculus or CoC)?
       - [X] imagine infinite loop, how to debug?
         - [X] first, how do you debug infinite loops at runtime?
           - printfs.
@@ -165,11 +165,13 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
           - or at least, i haven't dug enough to make it non-hell.
         - means that type level calculus is somehow dynamic.
           - yes!
-      - type erasure?
+      - [X] type erasure?
         - yes!
           - compilation is important
+          - simple type-less `eval` is important
+            actual semantics to the language
         - how do you do type erasure for things that depend on _internally_ or through some function application on types?
-          - make sure that the applications are complete
+          - make sure that the applications are complete, and that all variables closed over are complete
         - doesn't type erasure imply kind checking?
           - ie: notice which sub-terms depend on types or not
           - nope, you can use an over-approximation.
@@ -204,8 +206,26 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
       - else, how to compare `fun a -> list a` with itself?
       - but not _full_ normalization, because of recursive types
         - this is already solved with fold/unfold, no new complexity here
-    - decide on when static evaluation happens
+    - [X] decide on when static evaluation happens
       - during typechecking.
+      - smells bad.
+        - this is the correct solution, but...
+        - type checking sounds like a bad name, doesn't capture the concept.
+        - type checking sounds like mere pass of static analysis, but it transforms term.
+      - what does type checking do?
+        - synthesize types
+        - check types
+        - reduce types
+        - apply static things
+        - check that static things are all applied
+      - why is type and static the same pass?
+        - static depends on types, so must be at same time or after
+          - ad-hoc polymorphism
+        - types depends on static, so must be at same time or after
+          - dependent types
+      - still smells some:
+        - writing files statically should not happen during typechecking.
+        - this pass doesn't capture _all_ metaprogramming 
     - decide on the status of polymorphic expressions and parametric types
       - find polymorphic expressions / parametric types where there are errors or not _depending on what you reduce them with_
       - semi-equality
