@@ -226,31 +226,172 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
       - still smells some:
         - writing files statically should not happen during typechecking.
         - this pass doesn't capture _all_ metaprogramming 
-    - decide on the status of polymorphic expressions and parametric types
-      - find polymorphic expressions / parametric types where there are errors or not _depending on what you reduce them with_
-      - semi-equality
+    - [X] equality vs reductions
+      - [X] no reduction should be performed _within_ the equality relationship
+      - [X] alpha-equivalent syntactic equality
+    - [X] decide on the status of polymorphic expressions and parametric types
+      - [X] find polymorphic expressions / parametric types where there are errors or not _depending on what you reduce them with_
+        - none in current calculus
+      - [X] semi-equality?
         - "for sure yes"
         - "for sure no"
         - "unsure"
-        - no reduction should be performed _within_ the equality relationship
         - converges on full equality on ground terms
-        - alpha-equivalent syntactic equality
-      - outside of equality, all reductions should be performed eagerly, through type-level partial evaluations
-      - partial parameters / functions
-        - all types are eagerly partially evaluated
-        - params can be flagged as "partially evaluatable" (will be partially evaluated whenever instantiated)
-      - transparent parameters / functions
-        - non-full-equality when going through them should be an error
-      - examples for all of them
+        - good idea, but complex
+        - transparent parameters / functions
+          - non-full-equality when going through them should be an error
+      - [X] partial parameters / functions
+        - already dealt with above
+    - [X] ...abstract types?
+      - scopes
+        - scope where open, else can do nothing
+        - scope where abstract
+        - `let rec abstract x = (* open *) and y = (* open *) ;; (* opaque *)` ?
+        - module without signature, just match to all instances of abstract type
+          - bad. sometimes, you want `val make : open_version -> opaque_version`
+          - very bad. not clear _what_ should be abstract when implicit
+        - module signatures
+          - implement type matching, important for other things too
+          - very verbose
+      - implem
+        - paths
+          - abstract type is identified by its path, like `ThatAbstractModule.t`
+          - ocaml way!
+          - but what about results of functors / anon modules?
+            - not in the type-calculus
+              - can't do `(module M)` or `(val x)` in type expressions
+            - no scope extrusion
+              - if bound to a local binding, can't move out to a scope where the local binding is not accessible
+          - extremely restrictive.
+            - don't want to have syntactic restriction of "no module in the type calculus"
+            - OTOH, what is `(F (X)).t` wrt scope extrusion?
+        - opaque type
+          - create new `unfold` constructor, for opaque types
+          - opaque types not unfolded by default
+          - private types??
+            - like opaque types, but only specific constructor can open it
+            - `unfold` tagged with full structural types
+            - opaque type tagged with a name, that should be used on `unfold`, and acts as a key?
+              - nominal type
+              - doesn't work
+            - or opaque type tagged with a randomly generated UUID -> non-determinism!!!
+          - very hacky.
+          - problem of raw opaque types:
+            - no guarantee, anyone can still use the `unfold` constructor
+            - solution: remove it from scope!
+        - dependent pairs.
+          - something something like existential GADTs in OCaml, but more powerful
+          - need to support existential types in top level bindings & between compilation units
+          - doesn't let you have a module calculus (`include`) without solving dependent _rows_
+          - on reflection: same problem as paths based
+            - only get access to the abstract type when deconstructing the dependent pair, which only happens on binders (match)
+      - yes. go with modules + module signatures + paths.
+        - tried and tested
+        - already vpowerful
+        - can do more later but ye.
+    - [X] subset/refinement/predicate types?
+      - more powerful static analysis within type system?
+        - bleh.
+        - type system convenient, but should have practical way to bootstrap from it
+      - if type system already deals with constrains, natural extension
+        - hindley milner can say `?t = (?? * int)`, so you could write something like TS, `forall T extends (any * int) , ...`
+        - or MLF's constraints
+      - enforce predicate on type
+        - use module abstraction instead
+          - `make : true_type -> t` and `get : t -> true_type`
+          - but bad developer experience
+            - ok to overload _constructors_, because new constraint is enforced on construction
+            - but not ok to overload _destructors_. new constraint is _granted_ on destruction
+            - any obvious solution?
+              - modular implicit / type classes on `get`
+                - but what is `get`??
+                - when are recursive values not bound to a variable reduced??
+                  - they are always bound to a variable, that's the semantics of `(rec x -> ...)`: bound the full expr to `x`
+                  - so there's a meaningful `get` operation: access the variable from the context
+                - no equivalent for `abstract` types: not necessarily bound to a variable, can be created anonymously and used through a structure. like `{ foo = abstract_make x ; bar = ... }.foo`. no `var` is bound to `abstract_make`, and no natural interface for both a variable and a record access
+          - does not compose
+            - `{ x in T | predicate1(x) } & { x in T | predicate2(x) }` -> `{x in T | predicate1(x) && predicate2(x) }`
+            - composition so bad here. you want a logic.
+        - subtyping
+          - `{ x in T | predicate(x) } <: T`
+          - aaaaaaaaa, why would you hurt yourself
+      - tl;dr: no.
+        1. for basic things, abstraction + some thinking about DX for use-site
+        2. for complex things, L o G i C
+    - [X] type level calculus??
+      - type operators
+        - tfield: access field from type records
+        - targ: access arg from type functions
+        - more operators for other things
+      - pattern match on type
+        - more general than just `tfield` / `targ` custom type operators
+        - `match_type ... with TRecord lst -> ...`
+        - but then, to actually extract `foo : number` from `{ foo : number ; ... }`, need to have other type functions like `List.assoc` at the type level
+      - quotes
+        - can reify a type into a value, that can then be manipulated
+        - and then, a value of that type back into a type
+        - ```ocaml
+            type 'a get_foo = to_type (
+              match (to_value 'a) with
+              | TRecord lst -> (
+                List.assoc "foo" lst
+              )
+              | _ -> failwith "get_foo: expected type trecord"
+            )
+          ```
+        - just based???
+        - true magic of `type : type`
+        - `to_value` can only exist at typing-time
+          - must get type erased to hell
+          - check on static stuff
+        - how does `to_value` deal with incomplete types?
+          - `get_foo` good example of this
+            - when evaluating `get_foo`, `to_value` only get a TVar for `'a`, as `get_foo` has not been applied to an arg at start
+          - what is the strategy to deal with this?
+            1. only apply `to_value` to fully reduced types, make it `partial` instead
+              - valid
+            2. apply `to_value` to the non-fully reduced type. fail, but discard the failure because one of the vars in the env was used and not bound, and return partial instead.
+              - invalid, too complicated
+            3. put burden on quote definer:
+              - `to_value 'a` returns `Partial | Full`, so quote definer knows if it deals with fully reduced or not
+              - itself returns `Partial | Full`, and `Partial` is diff from raising an exception
+              - seems best. not incompatible with `1`.
+                - 1 is just `Full x -> f x | Partial x -> Partial x` 
+          - this is truly based.
+      - yes. quotes.
+    - merge all the calculi?
+      - what are the calculi?
+        - term calculus
+        - type calculus
+        - namespace calculus
+      - how is this dealt with in general?
+        - most langs (TS to OCaml lol): diff calculi for each level
+        - dyn langs: 1 calculus for everything, because no type, and no care to namespaces
+          - python: no actual namespaces
+          - JS: just objects
+        - coq: 
+      - 3 full diff calculi
+        - invalid. already di
     - move design decisions to written text
-  - decide on pattern match on types vs type operators
-    - type operators
-      - tfield: access field from type records
-      - targ: access arg from type functions
-    - pattern match on type
-      - reify type type and interpret it
-  - tliteral for expressions
-    - quotes???
+  - convenience
+    - on modules with abstract signature, expose `Raw` version automatically
+    - match var names to types
+    - create constructors for variants and recursive variants automatically
+    - List.map : (type a b) . (a list) -> (a -> b) -> b list
+      - on definition, OCaml's thing: `(lst : 'a list) (f : 'a -> 'b)`
+        - no need to write `(type a b) ...` when it is top level
+        - can even write `(lst : {'a} list) (f : 'a -> {'b})` to make `'a` and `'b` implicit
+      - on use, List.map lst (fun x -> ...)
+        - extract `{a}` from `lst`, and inject it in the following
+        - extract `{b}` from `(fun x -> ...)` and inject it in the following
+      - if not all args are passed: fail!
+        - means that chained applications now must be first class in ast
+    - optional args
+    - functions defined by holes
+      - examples
+        - inc function `List.map lst (? + 1)`
+        - swap function `(f ?2 ?1)`
+      - doesn't work well with no-type-inferece
   - maps for records and variants instead of lists
   - standardize test helpers
   - decide on subtyping for variants and records
