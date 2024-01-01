@@ -155,10 +155,130 @@ This might seem bad, but this comes from a simple double dependency:
 
 This does not mean that all of static evaluation should be captured by type-level evaluation. There's a lot that should be done by regular metaprogramming. You don't really want your type-system to write to arbitrary files, or add new bits to the AST. For this, you want to rely on more traditional code generation techniques.
 
+#### FULL TYPE-LEVEL CALCULUS
+
+Ok. So, you need an actuall full type level calculus. Don't listen to people. Type systems **are** that complicated. This is worth a top-level point though.
+
+## Full Type-Level Calculus
+
+You need a full type-level calculus. It has been said.
+
+There are just too many operators that are just too practical, and as a language builder, you will not build them all.
+Despite how impressive it is, OCaml has no support for ad-hoc polymorphism, or a `get_foo` type-level function that takes a record type like `{ foo : int ; bar : string }` and returns its `foo` type (`int` here).
+TypeScript has them, but in ways that make me sad. And dependently typed systems do not have them, even though they get all of the complexity of dependent types.
+
+Let's briefly go over the different possible approaches, and end with the selected one.
+
+### Pseudo-Survey
+
+#### Ad-Hoc Land
+
+TypeScript "solves" the problem by constantly adding more shit into its type calculus. Just check out [that page describing a whole bunch of'em](https://www.typescriptlang.org/docs/handbook/utility-types.html) or [its type's cheat sheet](https://www.typescriptlang.org/static/TypeScript%20Types-ae199d69aeecf7d4a2704a528d0fd3f9.png).
+
+#### Proper Type-Level Calculus
+
+Rather than adding very ad-hoc operators like `ReturnType` and `ArgType` in TypeScript, you might want to add operators that are more "calculus-like". For instance, you could add a pattern matching on types, such that one could write something like:
+```ocaml
+let return_type (t : type) =
+  match t with
+  | Arrow (_arg , return) -> return
+  | _ -> failwith "not a function type"
+
+let arg_type t =
+  match t with
+  | Arrow (arg , _return) -> arg
+  | _ -> failwith "not a function type"
+```
+
+This would already be much better than Ad-Hoc land, but still suffers from Greenspun #10. Consider this time the `get_foo` type-level function, which, given a record type, must extract its `foo` field. (`get_foo { foo : int ; bar : string } -> int`)
+
+```ocaml
+let get_foo (t : type) =
+  match t with
+  | Record lst -> list_assoc "foo" lst
+  | _ -> failwith "not a record type
+```
+
+Here, we conjured a `list_assoc` function, which basically looks at the correct binding in list (where `lst` could be `[("foo" , int) , ("bar" , string)]` for instance). This implies **a quite big standard-library** for the type-level calculus.
+More generally, a proper type-level calculus is non-trivial, takes time and will need to reimplement a whole lot that is already implemented in the regular value-level calculus.
+
+Let's go through one last idea before explaining our decision.
+
+#### Dependently Typed Systems
+
+If a language builder needs a proper type-level calculus, and doesn't want to reimplement a new calculus separate from the value-level, they could try to _merge_ those two calculi.
+
+This is what the [Calculus of Construction](https://en.wikipedia.org/wiki/Calculus_of_constructions) does, and more generally [Dependently Typed Systems](https://en.wikipedia.org/wiki/Dependent_type).
+
+While this greatly improves the expressive power of the type-level calculus, this comes at the cost of crippling the value-level calculus. Dependently Typed languages put a strong focus on _pure_ functions.
+Purity makes writing regular programs a pain. It often involves non-trivial monadic encodings for otherwise trivial programs. [This example from Lean is quite representative.](https://lean-lang.org/functional_programming_in_lean/monad-transformers/reader-io.html)
+Even worse, dependently typed language's notion of purity is often stronger than Haskell's: _non-termination_ is itself considered _impure_. In other words, all functions much be proven to halt. This makes defining functions as simple as `quick_sort` quite challenging.
+
+There are ways to improve on existing dependently typed systems. Their constraints are not ours. Typical dependently typed systems care about the [Curry-Howard isomorphism](https://en.wikipedia.org/wiki/Curry%E2%80%93Howard_correspondence). 
+They interpret many types as statement, and finding a program with the given type as proving these statements. This is the main source of constraints over what programs are allowed:
+- Effects make this whole thing unsound. So they ban effects.
+- Non-terminating programs make this whole thing unsound. So they restrict programs to provenly terminating ones.
+- Because of [paradoxes](https://en.wikipedia.org/wiki/System_U), `Type` (the type of types) can not have `Type` (itself). The common solution involves a universe hierarchy: an infinite "tower of `Type`", that starts with `int : Type_0`, then `Type_0 : Type_1`, `Type_1 : Type_2` and so on and so forth. This means that functions taking types as parameters (polymorphic functions or parametric types) must specify what level of the tower they target, _or the language must involve some even more complex band-aid in the shape of [universe polymorphism](https://coq.inria.fr/refman/addendum/universe-polymorphism.html) or [universe cumulativity/subtyping](https://agda.readthedocs.io/en/v2.6.2.2/language/cumulativity.html)_.
+- [Someone on stack overflow says that pattern matching on types would make Coq incompatible with the Univalence Axiom.](https://stackoverflow.com/a/42141166) It is good that we do not care about this!
+
+So, as we progress in building the language, we might move closer and closer to a unified calculus for the value-level and the type-level.
+But this involves solving a bunch of unsolved problem.
+Let's check out the more practical intermediate solution instead.
+
+
+### Type-Level Quotations
+
+#### Introduction
+
+The approach that we picked is inspired by quote-based metaprogramming.
+Fundamentally, we introduce in the language:
+- A data-type representing type expressions, let's call it `etype` (for embedded type).
+- A construct that gets us the AST of a type, and represents it as an `etype`. `to_value : type -> etype`
+- A construct letting us go from a value of type `etype` to a type. `to_type : etype -> type`
+
+Implementing the famous `get_foo` from earlier would look like:
+```ocaml
+type 'a get_foo = to_type (
+  match (to_value 'a) with
+  | TRecord lst -> (
+    List.assoc "foo" lst
+  )
+  | _ -> failwith "get_foo: expected type trecord"
+)
+```
+
+This is ludicrously powerful. This lets you defined `ReturnType`, `ArgType`, `get_foo` and more as regular functions using the term-level calculus!
+
+#### Extra Considerations
+
+Obviously, anything in `to_value` can only exist at typing-time and gets erased at runtime. So it should reuse the scaffolding meant to discriminate between typing-time and run-time values.
+
+Less obviously is the question of how `to_value` should deal with non-fully applied parameters?
+To make it clear, let's consider `get_foo`. When evaluating `get_foo`, `to_value` only get a TVar for `'a`, as `get_foo` has not been applied to an arg at start.
+
+How should we deal with this? There are roughly three approaches:
+1. Only apply `to_value` to fully reduced types. If applied to a not-fully reduced types, it should do nothing and be considered a `partial` evaluation instead.
+  This is valid, although a bit restrictive.
+2. Apply `to_value` to the non-fully reduced type. The current code would then fail, but `teval` should discard the failure as one of the vars that was queried was not bound, and should thus return a partial instead. 
+  This is much too complicated.
+3. Put burden on the definer of `get_foo`.
+  - `to_value 'a` should return `(Partial | Full) of etype` instead of just an `etype`. That way, `get_foo` knows if it's dealing with a fully reduced type or not.
+  - `get_foo` itself should return a `(Partial | Full) of etype`. In case of partiality, it can just signal it, instead of raising an exception.
+
+Option 3 is the best one, and is not incompatible with Option 1. Indeed, Option 1 is just a special case of Option 3, where `get_foo` does something like: `Full x -> (* regular processing *) | Partial x -> x`.
+But Option 3 is more powerful in that it can evaluate partial types. For instance, `get_foo { foo : int ; bar : A }` where `A` is not given yet would return `get_foo { foo : int ; bar : A }` with Option 1, but be evaluated to `int` in Option 3.
+
+#### Conclusion
+
+Based.
+
 ## Namespace-Level Evaluation
 
 Same as Type-Level Evaluation, but replace "Type" with "Namespace".
 
+More seriously. You have a range of how much languages care about namespaces. From "not at all" with C prototypes, to some minimal namespace/module calculus like Typescript's nested namespaces, to actual first-class citizens with types and functions, like OCaml and Coq.
+
+All that was said for types do apply to modules. Funnily enough, OCaml [has some support to talk about modules from within regular code and vice-versa](https://v2.ocaml.org/manual/firstclassmodules.html), a simpler example of what was mentioned above for types. [Here is a tutorial about it](https://dev.realworldocaml.org/first-class-modules.html).
 
 
 # TODO
@@ -379,66 +499,6 @@ Same as Type-Level Evaluation, but replace "Type" with "Namespace".
       - tl;dr: no.
         1. for basic things, abstraction + some thinking about DX for use-site
         2. for complex things, L o G i C
-    - [X] type level calculus??
-      - type operators
-        - tfield: access field from type records
-        - targ: access arg from type functions
-        - more operators for other things
-      - pattern match on type
-        - more general than just `tfield` / `targ` custom type operators
-        - `match_type ... with TRecord lst -> ...`
-        - but then, to actually extract `foo : number` from `{ foo : number ; ... }`, need to have other type functions like `List.assoc` at the type level
-      - quotes
-        - can reify a type into a value, that can then be manipulated
-        - and then, a value of that type back into a type
-        - ```ocaml
-            type 'a get_foo = to_type (
-              match (to_value 'a) with
-              | TRecord lst -> (
-                List.assoc "foo" lst
-              )
-              | _ -> failwith "get_foo: expected type trecord"
-            )
-          ```
-        - just based???
-        - true magic of `type : type`
-        - `to_value` can only exist at typing-time
-          - must get type erased to hell
-          - check on static stuff
-        - how does `to_value` deal with incomplete types?
-          - `get_foo` good example of this
-            - when evaluating `get_foo`, `to_value` only get a TVar for `'a`, as `get_foo` has not been applied to an arg at start
-          - what is the strategy to deal with this?
-            1. only apply `to_value` to fully reduced types, make it `partial` instead
-              - valid
-            2. apply `to_value` to the non-fully reduced type. fail, but discard the failure because one of the vars in the env was used and not bound, and return partial instead.
-              - invalid, too complicated
-            3. put burden on quote definer:
-              - `to_value 'a` returns `Partial | Full`, so quote definer knows if it deals with fully reduced or not
-              - itself returns `Partial | Full`, and `Partial` is diff from raising an exception
-              - seems best. not incompatible with `1`.
-                - 1 is just `Full x -> f x | Partial x -> Partial x` 
-          - this is truly based.
-      - yes. quotes.
-    - [X] merge all the calculi?
-      - what are the calculi?
-        - term calculus
-        - type calculus
-        - namespace calculus
-      - how is this dealt with in general?
-        - most langs (TS to OCaml lol): diff calculi for each level
-        - dyn langs: 1 calculus for everything, because no type, and no care to namespaces
-          - python: no actual namespaces
-          - JS: just objects
-        - coq: 
-      - build 3 full diff calculi
-        - invalid. already explained above why fully diff type level calculus is invalid
-      - merge 1 expressive calculus
-        - valid. but not there yet, will take some time before.
-      - split into 3 calculi, but nice injection in term calculus for fully general manipulations
-        - ie: THE QUOTE SYSTEM
-        - seems based.
-      - start with injections for now, ideally merge into one big calculus later
     - move design decisions to written text
   - convenience
     - on modules with abstract signature, expose `Raw` version automatically
