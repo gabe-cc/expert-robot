@@ -46,6 +46,120 @@ Whenever `rec self -> body` is encountered during evaluation, `body` is evaluate
 
 Then, whenever `rec self -> body` is encountered when fetching a variable from the environment, it is evaluated one more time.
 
+## Type-Level Evaluation
+
+### Introduction
+
+In most typed languages, you have _some_ evaluation happening at the type-level. Concretely, you have a notion of complex type expressions being reduced into simpler type values.
+
+At the very least, in typed languages, you can define type aliases like `type T = { foo : int , bar : string }` and then use them. When you'll use them the alias will be substituted for the underlying type, which is a basic form of evaluation.
+
+Even though you might discount this as a fully fledged form of evaluation, on the ground of being too simple, notice that it already suffers from its challenges! Without loops, functions or numbers, **with just variables**, you can already build terms that blow up exponentially. Consider the following:
+```typescript
+type T1 = [number , number]
+type T2 = [T1 , T1]
+type T3 = [T2 , T2]
+// ...
+type TN = [TN_minus_one , TN_minus_one]
+```
+
+If this got you thinking, potentially in the direction of "do languages put a limit on this kind of stuff?" or "haha, this one is easy, you just need to unfold these variables lazily!", great.
+
+### Typical Type-level Evaluation
+
+Type-level Evaluation is treated quite differently across languages. The reason why is that it is often an afterthought. A deeper reason comes from the intersection of two phenomena, which are pervasive across languages.
+
+#### Hopefully Small and Simple
+
+Most languages act as if **type-level evaluation was small**.
+
+"small" means many things. But fundamentally, it means that you should be able to largely ignore it. Both as a user of the language, or as a maker of the language.
+
+For instance, type-level evaluation should be fast. If as a developer, you notice that _merely evaluating a type_ (let alone type checking!) took a non-trivial amount of time, something has gone very wrong.
+
+Furthermore, it should have as little effects as possible. Beyond "error during type evaluation means type checking failed", it should be side-effect free.
+
+Even more "should": the type AST, its meaning and the behavior of type-level evaluation should all be simple.
+
+And finally: users should not try to do too many things with types. Language builders will assume that developers using the language should not try to do too many complex things with types, except if they truly know them.
+
+#### Hopelessly Big and Complex
+
+That's unfortunately not how things are in real-life. Languages grow over time, **and they grow a lot**. They start with some simple type system, built around a core principle like Hindley-Milner, Object Encapsulation, or Dependent Types. And then they unevitably grow into massive messes.
+
+Type systems are no exception to [Greenspun's tenth rule](https://en.wikipedia.org/wiki/Greenspun%27s_tenth_rule). In context:
+> Every sufficiently advanced type system contains an ad-hoc, informally specified, bug-ridden, slow implementation of half of the language's own semantics
+
+For type systems that are based on unification, you have [an even more specific variant (slide 26/39)](https://www.irif.fr/~gradanne/papers/gadts.pdf)
+> Any sufficiently complicated type system contains an ad hoc slow implementation of half of prolog.
+(I recommend reading all the slides.)
+
+Consider:
+- C-style untyped macros and C++ crazy templates
+- Constraint Resolution to derive type classes instance in Haskell
+- OCaml and GADTs
+- Advanced type-level evaluation that happens mid type inference: [check out this paper!](https://people.mpi-sws.org/~beta/papers/unicoq.pdf)
+
+#### FML
+
+This would be fun, if languages embraced that their type systems were complex and that type level evaluation was a proper kind of evaluation. We'd all find ways to manage this complexity and shit.
+
+But languages are in **denial**. They still act as if type-level evaluation was trivial. This predictibly leads to many problems.
+
+Even though users shouldn't do crazy things with types, languages do not define well behaved subsets / constraints, where if you follow, you're guaranteed to get good error messages. As a result, you're left on your own to discover which parts of the type system work well together, or not at all.
+
+Languages have very bad support for type error messages. Type errors have no stack traces! In unification based system, this is even more of a problem.
+As is expected from the lack of traces, there are no debuggers at the type-level. You do not get a step-by-step understanding of why a specific variable came to have a specific type.
+
+Let alone traces on errors or debuggers, languages do not offer `printf` at the type-level! If you want to print some intermediary types, you'll need to create some fake variables to check the type of some part of your code, or trigger some fake type errors.
+As expected from the lack of supported `printf`, your poorman's printf will suck. Sometimes, you'll see that that a variable has the very useful type `T` without knowing what `T` is. Or you might get the opposite error, where in an error message, your variable will have an absolutely massive type, without any helpful names. Sometimes, things are even worse, with primitive types like `boolean` and `number` being renamed to `cli_optional_flag` or `map_index` in all error messages.
+
+### Proper Type-Level Evaluation
+
+Let's do some proper type level evaluation.
+
+#### Separated Type-Level Evaluation Function
+
+First and foremost, all of the evaluation should happen in the `teval` function.
+
+This means it should not happen in the type comparison function. Indeed, the type comparison function should be as syntactic as possible.
+There are currently two exceptions to this rule:
+- Alpha-equivalence. Instead of moving the AST to a nameless encoding (HOAS/De-Bruijn indices), we instead implement an equality function modulo alpha-equivalence. This is done because we prefer a clearer AST.
+- Subtyping. We have some minimal subtyping. This is both to keep some optionality, and also an obsolete experiment with literal types.
+
+There should be no ad-hoc evaluation in the type checking functions. Given that we follow a straightforward bidirectional type checking algorithm, there is no such problem.
+
+#### Clear Evaluation Order
+
+Then, *there should be a clear evaluation order* for types. When you evaluate a program, there is a clear evaluation order: you know in what order the expressions are processed. The same should be true at the type-level.
+
+This doesn't work well with unification. Unification is fundamentally constraint solving, which is much less naturally directed than typical call-by-value evaluation.
+In prolog, when you write `append([[1,2],[3,4],[5]],Y)`, you get `Y = [1,2,3,4,5]`, which is the expected order, although the syntax is strange (`append(input , output)`). But you can also write, `append([[1,2],Y,[5]], [1,2,3,4,5])`, in which case you get `Y = [3,4]`.
+Powerful, but unnatural. So for now, we just don't do unification.
+
+Removing unification removes a difficulty, but still does not make everything trivial, with regard to having a clear evaluation order.
+
+Typical call-by-value does not evaluate the body of functions. For instance, if you have `let wrap_double = x => double(x)`, it will not be evaluated to `x => x + x`, until you pass it an argument.
+At the type level, this is bad. Consider `type 'a double = 'a * 'a`, and `let double_apply = (type a) (f : a double -> a) (x : a) = f (x , x)`. Because it is a polymorphic function, `a double` is not applied. As such, you would get a type error on `f (x , x)` as `a double` would be different from the inferred `(a * a)`.
+Fundamentally, you need to extend call-by-value so that you can reduce type expressions in the body of polymorphic functions and parametric types.
+
+This is what we do: at the type-level, we reduce everything (including the body of functions) eagerly. We descriminate full evaluations from partial evaluations, as we need to keep track of this information at various places.
+
+#### Type-level Evaluation: more than _type_ evaluation, _static_ evaluation
+
+We also offer some support for _value_ reductions under lambdas (guided by keyword), and should support more things in that vein. 
+
+This might seem bad, but this comes from a simple double dependency:
+- A lot of static evaluation depends on types, such as ad-hoc polymorphism
+- A lot of types depend on static evaluation, which is the whole point of dependent types
+
+This does not mean that all of static evaluation should be captured by type-level evaluation. There's a lot that should be done by regular metaprogramming. You don't really want your type-system to write to arbitrary files, or add new bits to the AST. For this, you want to rely on more traditional code generation techniques.
+
+## Namespace-Level Evaluation
+
+Same as Type-Level Evaluation, but replace "Type" with "Namespace".
+
+
 
 # TODO
 - [X] check
@@ -111,19 +225,7 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
       - [X] id applied to itself
       - [X] test synthesize should return fully evaluated types
       - (finished when cleanup is finished)
-    - [X] decide on whether all types should be fully evaluated up to a point
-      - [X] ~~yes.~~ nope.
-        - within polymorphic functions, nothing that depends on the type parameter is fully evaluated
-        - if not, how can you pattern match on types?
-          - you go _as far as possible_
-          - if you depend on a parametric/polymorphic type variable, you don't unfold the match until you get access to the parameter
-      - [X] `teval` should return `Full` or `Partial`
-      - [X] how to discriminate between strong and weak reductions? should there be any discrimination?
-        - strong: reduce under parametric/polymorphic
-        - partial: reduce whenever an arg is passed, doesn't wait for all the args
-        - right now, all type reductions are strong & partial
-        - `fun static` should be for strong & partial _value_ reductions
-        - and possibly a keyword for full type reductions, or weak type reductions??
+    - [X] `teval` should return `Full` or `Partial`
     - [X] in the future, what if arbitrary functions at type level (type-level calculus or CoC)?
       - [X] imagine infinite loop, how to debug?
         - [X] first, how do you debug infinite loops at runtime?
@@ -201,47 +303,6 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
       - type directed transformations
         - ad-hoc at first, like deep pattern matching
         - then possibly an engine?
-    - [X] should types be evaluated under their lambdas??
-      - yes. at least some.
-      - else, how to compare `fun a -> list a` with itself?
-      - but not _full_ normalization, because of recursive types
-        - this is already solved with fold/unfold, no new complexity here
-    - [X] decide on when static evaluation happens
-      - during typechecking.
-      - smells bad.
-        - this is the correct solution, but...
-        - type checking sounds like a bad name, doesn't capture the concept.
-        - type checking sounds like mere pass of static analysis, but it transforms term.
-      - what does type checking do?
-        - synthesize types
-        - check types
-        - reduce types
-        - apply static things
-        - check that static things are all applied
-      - why is type and static the same pass?
-        - static depends on types, so must be at same time or after
-          - ad-hoc polymorphism
-        - types depends on static, so must be at same time or after
-          - dependent types
-      - still smells some:
-        - writing files statically should not happen during typechecking.
-        - this pass doesn't capture _all_ metaprogramming 
-    - [X] equality vs reductions
-      - [X] no reduction should be performed _within_ the equality relationship
-      - [X] alpha-equivalent syntactic equality
-    - [X] decide on the status of polymorphic expressions and parametric types
-      - [X] find polymorphic expressions / parametric types where there are errors or not _depending on what you reduce them with_
-        - none in current calculus
-      - [X] semi-equality?
-        - "for sure yes"
-        - "for sure no"
-        - "unsure"
-        - converges on full equality on ground terms
-        - good idea, but complex
-        - transparent parameters / functions
-          - non-full-equality when going through them should be an error
-      - [X] partial parameters / functions
-        - already dealt with above
     - [X] ...abstract types?
       - scopes
         - scope where open, else can do nothing
@@ -359,7 +420,7 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
                 - 1 is just `Full x -> f x | Partial x -> Partial x` 
           - this is truly based.
       - yes. quotes.
-    - merge all the calculi?
+    - [X] merge all the calculi?
       - what are the calculi?
         - term calculus
         - type calculus
@@ -370,8 +431,14 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
           - python: no actual namespaces
           - JS: just objects
         - coq: 
-      - 3 full diff calculi
-        - invalid. already di
+      - build 3 full diff calculi
+        - invalid. already explained above why fully diff type level calculus is invalid
+      - merge 1 expressive calculus
+        - valid. but not there yet, will take some time before.
+      - split into 3 calculi, but nice injection in term calculus for fully general manipulations
+        - ie: THE QUOTE SYSTEM
+        - seems based.
+      - start with injections for now, ideally merge into one big calculus later
     - move design decisions to written text
   - convenience
     - on modules with abstract signature, expose `Raw` version automatically
@@ -392,6 +459,9 @@ Then, whenever `rec self -> body` is encountered when fetching a variable from t
         - inc function `List.map lst (? + 1)`
         - swap function `(f ?2 ?1)`
       - doesn't work well with no-type-inferece
+      - functions with minimal characters
+    - set theoretic types
+      - literals, enums, and the like
   - maps for records and variants instead of lists
   - standardize test helpers
   - decide on subtyping for variants and records
