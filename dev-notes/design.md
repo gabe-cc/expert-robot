@@ -1,16 +1,4 @@
-# Basic Setup
-
-```sh
-opam switch create . 5.1.0
-eval $(opam env)
-opam install dune utop ocaml-lsp-server ocamlformat
-opam install ocolor ppx_deriving
-dune runtest --watch
-```
-
-# Design Choices
-
-## Recursion
+# Recursion
 
 Recursion concerns itself with recursive _types_ and recursive _values_.
 Recursive types are types that refer to themselves. For instance: `tree = Leaf of int | Node (list tree)`.
@@ -19,7 +7,7 @@ Recursive values are values that refer to themselves. For instance, the fibonacc
 There are recursive values with non-recursive types. eg: the fibonacci function.
 There are non-recursive values with recursive types. eg: `Leaf 42` of the above-defined type `tree`.
 
-### Recursive Types
+## Recursive Types
 
 The code implements recursive types through iso-recursion. This means that:
 - Constructing / Building an expression `expr` of a recursive type `t` requires wrapping it with a `fold` (`fold expr`).
@@ -27,7 +15,7 @@ The code implements recursive types through iso-recursion. This means that:
 
 This is most common with inductive types (recursive variants). In that case, you will do something like `match unfold (fold (Foo 42)) with`
 
-### Recursive Values
+## Recursive Values
 
 The code implements recursive values through a `rec` constructor.
 
@@ -46,9 +34,9 @@ Whenever `rec self -> body` is encountered during evaluation, `body` is evaluate
 
 Then, whenever `rec self -> body` is encountered when fetching a variable from the environment, it is evaluated one more time.
 
-## Type-Level Evaluation
+# Type-Level Evaluation
 
-### Introduction
+## Introduction
 
 In most typed languages, you have _some_ evaluation happening at the type-level. Concretely, you have a notion of complex type expressions being reduced into simpler type values.
 
@@ -65,11 +53,11 @@ type TN = [TN_minus_one , TN_minus_one]
 
 If this got you thinking, potentially in the direction of "do languages put a limit on this kind of stuff?" or "haha, this one is easy, you just need to unfold these variables lazily!", great.
 
-### Typical Type-level Evaluation
+## Typical Type-level Evaluation
 
 Type-level Evaluation is treated quite differently across languages. The reason why is that it is often an afterthought. A deeper reason comes from the intersection of two phenomena, which are pervasive across languages.
 
-#### Hopefully Small and Simple
+### Hopefully Small and Simple
 
 Most languages act as if **type-level evaluation was small**.
 
@@ -83,7 +71,7 @@ Even more "should": the type AST, its meaning and the behavior of type-level eva
 
 And finally: users should not try to do too many things with types. Language builders will assume that developers using the language should not try to do too many complex things with types, except if they truly know them.
 
-#### Hopelessly Big and Complex
+### Hopelessly Big and Complex
 
 That's unfortunately not how things are in real-life. Languages grow over time, **and they grow a lot**. They start with some simple type system, built around a core principle like Hindley-Milner, Object Encapsulation, or Dependent Types. And then they unevitably grow into massive messes.
 
@@ -100,7 +88,7 @@ Consider:
 - OCaml and GADTs
 - Advanced type-level evaluation that happens mid type inference: [check out this paper!](https://people.mpi-sws.org/~beta/papers/unicoq.pdf)
 
-#### FML
+### FML
 
 This would be fun, if languages embraced that their type systems were complex and that type level evaluation was a proper kind of evaluation. We'd all find ways to manage this complexity and shit.
 
@@ -114,11 +102,11 @@ As is expected from the lack of traces, there are no debuggers at the type-level
 Let alone traces on errors or debuggers, languages do not offer `printf` at the type-level! If you want to print some intermediary types, you'll need to create some fake variables to check the type of some part of your code, or trigger some fake type errors.
 As expected from the lack of supported `printf`, your poorman's printf will suck. Sometimes, you'll see that that a variable has the very useful type `T` without knowing what `T` is. Or you might get the opposite error, where in an error message, your variable will have an absolutely massive type, without any helpful names. Sometimes, things are even worse, with primitive types like `boolean` and `number` being renamed to `cli_optional_flag` or `map_index` in all error messages.
 
-### Proper Type-Level Evaluation
+## Proper Type-Level Evaluation
 
 Let's do some proper type level evaluation.
 
-#### Separated Type-Level Evaluation Function
+### Separated Type-Level Evaluation Function
 
 First and foremost, all of the evaluation should happen in the `teval` function.
 
@@ -129,7 +117,7 @@ There are currently two exceptions to this rule:
 
 There should be no ad-hoc evaluation in the type checking functions. Given that we follow a straightforward bidirectional type checking algorithm, there is no such problem.
 
-#### Clear Evaluation Order
+### Clear Evaluation Order
 
 Then, *there should be a clear evaluation order* for types. When you evaluate a program, there is a clear evaluation order: you know in what order the expressions are processed. The same should be true at the type-level.
 
@@ -145,7 +133,7 @@ Fundamentally, you need to extend call-by-value so that you can reduce type expr
 
 This is what we do: at the type-level, we reduce everything (including the body of functions) eagerly. We descriminate full evaluations from partial evaluations, as we need to keep track of this information at various places.
 
-#### Type-level Evaluation: more than _type_ evaluation, _static_ evaluation
+### Type-level Evaluation: more than _type_ evaluation, _static_ evaluation
 
 We also offer some support for _value_ reductions under lambdas (guided by keyword), and should support more things in that vein. 
 
@@ -155,11 +143,11 @@ This might seem bad, but this comes from a simple double dependency:
 
 This does not mean that all of static evaluation should be captured by type-level evaluation. There's a lot that should be done by regular metaprogramming. You don't really want your type-system to write to arbitrary files, or add new bits to the AST. For this, you want to rely on more traditional code generation techniques.
 
-#### FULL TYPE-LEVEL CALCULUS
+### FULL TYPE-LEVEL CALCULUS
 
 Ok. So, you need an actuall full type level calculus. Don't listen to people. Type systems **are** that complicated. This is worth a top-level point though.
 
-## Full Type-Level Calculus
+# Full Type-Level Calculus
 
 You need a full type-level calculus. It has been said.
 
@@ -169,13 +157,13 @@ TypeScript has them, but in ways that make me sad. And dependently typed systems
 
 Let's briefly go over the different possible approaches, and end with the selected one.
 
-### Pseudo-Survey
+## Pseudo-Survey
 
-#### Ad-Hoc Land
+### Ad-Hoc Land
 
 TypeScript "solves" the problem by constantly adding more shit into its type calculus. Just check out [that page describing a whole bunch of'em](https://www.typescriptlang.org/docs/handbook/utility-types.html) or [its type's cheat sheet](https://www.typescriptlang.org/static/TypeScript%20Types-ae199d69aeecf7d4a2704a528d0fd3f9.png).
 
-#### Proper Type-Level Calculus
+### Proper Type-Level Calculus
 
 Rather than adding very ad-hoc operators like `ReturnType` and `ArgType` in TypeScript, you might want to add operators that are more "calculus-like". For instance, you could add a pattern matching on types, such that one could write something like:
 ```ocaml
@@ -204,7 +192,7 @@ More generally, a proper type-level calculus is non-trivial, takes time and will
 
 Let's go through one last idea before explaining our decision.
 
-#### Dependently Typed Systems
+### Dependently Typed Systems
 
 If a language builder needs a proper type-level calculus, and doesn't want to reimplement a new calculus separate from the value-level, they could try to _merge_ those two calculi.
 
@@ -226,9 +214,9 @@ But this involves solving a bunch of unsolved problem.
 Let's check out the more practical intermediate solution instead.
 
 
-### Type-Level Quotations
+## Type-Level Quotations
 
-#### Introduction
+### Introduction
 
 The approach that we picked is inspired by quote-based metaprogramming.
 Fundamentally, we introduce in the language:
@@ -249,7 +237,7 @@ type 'a get_foo = to_type (
 
 This is ludicrously powerful. This lets you defined `ReturnType`, `ArgType`, `get_foo` and more as regular functions using the term-level calculus!
 
-#### Extra Considerations
+### Extra Considerations
 
 Obviously, anything in `to_value` can only exist at typing-time and gets erased at runtime. So it should reuse the scaffolding meant to discriminate between typing-time and run-time values.
 
@@ -268,316 +256,15 @@ How should we deal with this? There are roughly three approaches:
 Option 3 is the best one, and is not incompatible with Option 1. Indeed, Option 1 is just a special case of Option 3, where `get_foo` does something like: `Full x -> (* regular processing *) | Partial x -> x`.
 But Option 3 is more powerful in that it can evaluate partial types. For instance, `get_foo { foo : int ; bar : A }` where `A` is not given yet would return `get_foo { foo : int ; bar : A }` with Option 1, but be evaluated to `int` in Option 3.
 
-#### Conclusion
+### Conclusion
 
 Based.
 
-## Namespace-Level Evaluation
+# Namespace-Level Evaluation
 
 Same as Type-Level Evaluation, but replace "Type" with "Namespace".
 
 More seriously. You have a range of how much languages care about namespaces. From "not at all" with C prototypes, to some minimal namespace/module calculus like Typescript's nested namespaces, to actual first-class citizens with types and functions, like OCaml and Coq.
 
 All that was said for types do apply to modules. Funnily enough, OCaml [has some support to talk about modules from within regular code and vice-versa](https://v2.ocaml.org/manual/firstclassmodules.html), a simpler example of what was mentioned above for types. [Here is a tutorial about it](https://dev.realworldocaml.org/first-class-modules.html).
-
-
-# TODO
-- [X] check
-- [X] pp
-- [X] test
-  - [X] eval
-  - [X] synthesize
-  - [X] anti-tests
-- [X] remove forced annotation on constructor
-- [X] rec types with fold/unfold
-  - [X] eval
-  - [X] type checking
-  - [X] tests
-    - [X] types
-    - [X] eval
-- [X] rec values with rec keyword
-  - [X] implem
-  - [X] tests
-    - [X] eval
-    - [X] types
-- [X] static eval
-  - [X] static eval (full or partial) construct
-  - [X] reconstruct term when synthesizing
-  - [X] tests
-- [X] polymorphism
-  - [X] collapse texpr and tvalues
-  - [X] deep polymorphism
-  - [X] remove useless cases in check
-  - [X] let type in
-  - [X] TCall
-  - [X] parametric types
-- [X] multi file preparation
-  - [X] check statements
-  - [X] namespace calculus basic
-    - [X] variable
-    - [X] struct
-    - [X] value
-    - [X] type
-    - [X] Test
-  - [X] build std lib modules
-    - [X] list
-    - [X] option
-- misc
-  - [X] add example of partial evaluation on record access (should work and return the correct field from the partial record)
-  - [X] add example of typing closure or remove type checking of closure
-  - [X] interweave var/tvar/nvar in ctx+tctx & share vars (split from OCaml, closer to Coq!)
-    - [X] Create new ctx and tctx types
-    - [X] Create context.ml for ctx helpers
-    - [X] Update eval.ml to use those helpers
-    - [X] Create tcontext.ml for tctx helpers
-    - [X] Update bidir.ml to use those helpers
-    - [X] Separate forward contexts from backward contexts
-      - [X] And fix some bugs thanks to that lol
-  - cleanup partial/full & strong/weak evaluation for types
-    - add more examples
-      - [X] id with diff name
-        - [X] test equality specifically
-        - [X] extend equality for alpha-equivalence
-          - [X] don't perform alpha renamings (n^2 time and space)
-          - [X] maintain mapping
-          - [X] debug existing code
-      - [X] id with higher order as param
-      - [X] id applied to itself
-      - [X] test synthesize should return fully evaluated types
-      - (finished when cleanup is finished)
-    - [X] `teval` should return `Full` or `Partial`
-    - [X] in the future, what if arbitrary functions at type level (type-level calculus or CoC)?
-      - [X] imagine infinite loop, how to debug?
-        - [X] first, how do you debug infinite loops at runtime?
-          - printfs.
-            - so need printfs at static-time!
-          - timers?
-            - eee. but agreed, need timers at static-time.
-          - state.
-            - agreed that need state at static-time.
-          - debugger.
-            - yup, need type level debugger, which is easy in our case.
-        - [X] timeout on type level evaluations?
-          - complicated. how to make it principled?
-          - consider:
-            - i build library just below the time out limit
-            - anyone that uses it goes over the limit
-          - looks bad. no for now.
-        - [X] type-level debugger?
-          - yes, ideally, debugger for type interpreter, interpreter *and* compiled code
-          - most realistically, just for the type interpreter and interpreter at first
-        - [X] sub-class that is linear time by construction and warning outside of it?
-          - how do you enforce it on non-type things?
-            - define complexity checker
-            - b a  s   ed
-            - but more realistically: no, not a good solution
-      - [X] how do you interweave static and type?
-        - two typical approaches
-          - 1. separate ASTs, and instead complex literal&unliteral / quote&unquote
-            - Staged Metaprogramming tradition.
-          - 2. mix value AST and type AST: merge func, funct and tfunc
-            - CoC tradition.
-        - I feel closer to 1.
-          - 2 with Type:Type can be strange, who knows
-          - 2 almost certainly need a kind checker, but that might be trivial with Type:Type
-          - 1 needs fewest changes to current codebase lol
-          - 1 is closest to actual metaprogramming, which is what we are actually doing: metaprogramming through partial evaluation and type-level evaluation
-      - [X] kind checking or not?
-        - no. kind checking is hell.
-          - or at least, i haven't dug enough to make it non-hell.
-        - means that type level calculus is somehow dynamic.
-          - yes!
-      - [X] type erasure?
-        - yes!
-          - compilation is important
-          - simple type-less `eval` is important
-            actual semantics to the language
-        - how do you do type erasure for things that depend on _internally_ or through some function application on types?
-          - make sure that the applications are complete, and that all variables closed over are complete
-        - doesn't type erasure imply kind checking?
-          - ie: notice which sub-terms depend on types or not
-          - nope, you can use an over-approximation.
-      - [X] over-approximator for type erasure
-        - tag all functions as static / dynamic
-        - all parameters until type parameters **must** be static
-        - all functions with **static** parameters must be fully evaluated...
-          - in `main`
-          - but not enough. need a notion of static vs dynamic exports:
-            - want to be able to exports types and some static non-fully evaluated functions 
-            - want to be able to exports non-main type-erased values
-          - `static export` vs `dyn export`
-      - [X] in the future, boxed values
-        - OCaml can compile polymorphic functions
-        - this is done through _boxed_ values
-        - OCaml ensures that function bodies _can not_ depend on non-instantiated types, and always interact through non-instantiated values through boxed OCaml-provided functions
-          - equality provided by OCaml
-          - reference/dereference provided by OCaml
-        - no solution for now to replicate this, but there _should_ be an approximator
-          - look at objects, basically. this is what they do.
-          - or rather, closer to Rust traits, that have specific layout requirements
-    - [X] think: how do you interweave type checking and other things?
-      - static analyses
-        - after type checking a unit
-        - need to store results of type checking unit, and then post processing them
-        - need to store results of static analyses, in separate locations, that still map back to AST
-      - type directed transformations
-        - ad-hoc at first, like deep pattern matching
-        - then possibly an engine?
-    - [X] ...abstract types?
-      - scopes
-        - scope where open, else can do nothing
-        - scope where abstract
-        - `let rec abstract x = (* open *) and y = (* open *) ;; (* opaque *)` ?
-        - module without signature, just match to all instances of abstract type
-          - bad. sometimes, you want `val make : open_version -> opaque_version`
-          - very bad. not clear _what_ should be abstract when implicit
-        - module signatures
-          - implement type matching, important for other things too
-          - very verbose
-      - implem
-        - paths
-          - abstract type is identified by its path, like `ThatAbstractModule.t`
-          - ocaml way!
-          - but what about results of functors / anon modules?
-            - not in the type-calculus
-              - can't do `(module M)` or `(val x)` in type expressions
-            - no scope extrusion
-              - if bound to a local binding, can't move out to a scope where the local binding is not accessible
-          - extremely restrictive.
-            - don't want to have syntactic restriction of "no module in the type calculus"
-            - OTOH, what is `(F (X)).t` wrt scope extrusion?
-        - opaque type
-          - create new `unfold` constructor, for opaque types
-          - opaque types not unfolded by default
-          - private types??
-            - like opaque types, but only specific constructor can open it
-            - `unfold` tagged with full structural types
-            - opaque type tagged with a name, that should be used on `unfold`, and acts as a key?
-              - nominal type
-              - doesn't work
-            - or opaque type tagged with a randomly generated UUID -> non-determinism!!!
-          - very hacky.
-          - problem of raw opaque types:
-            - no guarantee, anyone can still use the `unfold` constructor
-            - solution: remove it from scope!
-        - dependent pairs.
-          - something something like existential GADTs in OCaml, but more powerful
-          - need to support existential types in top level bindings & between compilation units
-          - doesn't let you have a module calculus (`include`) without solving dependent _rows_
-          - on reflection: same problem as paths based
-            - only get access to the abstract type when deconstructing the dependent pair, which only happens on binders (match)
-      - yes. go with modules + module signatures + paths.
-        - tried and tested
-        - already vpowerful
-        - can do more later but ye.
-    - [X] subset/refinement/predicate types?
-      - more powerful static analysis within type system?
-        - bleh.
-        - type system convenient, but should have practical way to bootstrap from it
-      - if type system already deals with constrains, natural extension
-        - hindley milner can say `?t = (?? * int)`, so you could write something like TS, `forall T extends (any * int) , ...`
-        - or MLF's constraints
-      - enforce predicate on type
-        - use module abstraction instead
-          - `make : true_type -> t` and `get : t -> true_type`
-          - but bad developer experience
-            - ok to overload _constructors_, because new constraint is enforced on construction
-            - but not ok to overload _destructors_. new constraint is _granted_ on destruction
-            - any obvious solution?
-              - modular implicit / type classes on `get`
-                - but what is `get`??
-                - when are recursive values not bound to a variable reduced??
-                  - they are always bound to a variable, that's the semantics of `(rec x -> ...)`: bound the full expr to `x`
-                  - so there's a meaningful `get` operation: access the variable from the context
-                - no equivalent for `abstract` types: not necessarily bound to a variable, can be created anonymously and used through a structure. like `{ foo = abstract_make x ; bar = ... }.foo`. no `var` is bound to `abstract_make`, and no natural interface for both a variable and a record access
-          - does not compose
-            - `{ x in T | predicate1(x) } & { x in T | predicate2(x) }` -> `{x in T | predicate1(x) && predicate2(x) }`
-            - composition so bad here. you want a logic.
-        - subtyping
-          - `{ x in T | predicate(x) } <: T`
-          - aaaaaaaaa, why would you hurt yourself
-      - tl;dr: no.
-        1. for basic things, abstraction + some thinking about DX for use-site
-        2. for complex things, L o G i C
-    - move design decisions to written text
-  - convenience
-    - on modules with abstract signature, expose `Raw` version automatically
-    - match var names to types
-    - create constructors for variants and recursive variants automatically
-    - List.map : (type a b) . (a list) -> (a -> b) -> b list
-      - on definition, OCaml's thing: `(lst : 'a list) (f : 'a -> 'b)`
-        - no need to write `(type a b) ...` when it is top level
-        - can even write `(lst : {'a} list) (f : 'a -> {'b})` to make `'a` and `'b` implicit
-      - on use, List.map lst (fun x -> ...)
-        - extract `{a}` from `lst`, and inject it in the following
-        - extract `{b}` from `(fun x -> ...)` and inject it in the following
-      - if not all args are passed: fail!
-        - means that chained applications now must be first class in ast
-    - optional args
-    - functions defined by holes
-      - examples
-        - inc function `List.map lst (? + 1)`
-        - swap function `(f ?2 ?1)`
-      - doesn't work well with no-type-inferece
-      - functions with minimal characters
-    - set theoretic types
-      - literals, enums, and the like
-  - maps for records and variants instead of lists
-  - standardize test helpers
-  - decide on subtyping for variants and records
-    - likely no
-  - decide on inference for variant constructor
-    - likely generate on type definition
-  - decide on row calculus for variants and records
-    - joints of rows are exclusive or inclusive?
-    - row polymorphism is lazy or symbolic?
-  - figure out nominal vs re-occurring types vs module abstraction
-    - think about functions taking an abstract module as parameter
-  - params can be flagged as "must be partially evaluated" (can't be passed around as dynamic closures)
-  - test shadowing (in match among other things)
-  - let static
-    - eval content of the let
-    - change tctx for eval case as a result
-  - namespace static
-    - so that you can call a method from a namespace in `let static` or `eval`
-  - go through TODOs
-  - test mu within mu (might need closure for mu types)
-  - investigate whether `tctx.TCTerm` should contain an `expr member`
-    - ie: should the type checker have a view of the values of the vars or not?
-    - looks like it should, and only my lazyness made it so that it did not
-- CLI
-  - grammar
-  - link context and files
-  - main logic
-- advanced
-  - higher order examples
-  - CoC
-  - effects with outside world
-  - top level effects well
-  - extraction
-- location
-- error message
-- CLI
-- advanced
-  - compile to python
-  - FFI
-  - mutually recursive mu types
-  - patterns
-  - namespace calculus advanced
-    - let namespace in
-    - signature calculus
-      - named signatures
-      - all namespace calculus
-    - functors
-    - include
-    - open
-    - visibility??
-- misc
-  - minimal size closures
-  - fun inline
-    - partial eval??
-    - suspend type checking??
-    - completely lazy type checking?? (only type check when you get the params)
-    - try type checking, and if not working, make lazy??
-  - partial evaluate function args
 

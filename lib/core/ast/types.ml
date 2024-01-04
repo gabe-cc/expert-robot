@@ -56,7 +56,6 @@ and texpr =
 | TCall of texpr * texpr (* type application *)
 | TNamespace_access of nexpr * string
 
-(*  *)
 and tnexpr =
 | TNNamespace of ftctx
 (* | TNVar of string *)
